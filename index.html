@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d0f0b" />
+  <title>СРОЧНИК — армейская сага</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">🪖</div>
+        <div class="brand-text">
+          <div class="brand-title">СРОЧНИК</div>
+          <div class="brand-sub">армейская сага · β</div>
+        </div>
+      </div>
+      <button class="shop-chip" id="shopBtn" aria-label="Открыть чипок">
+        <span class="shop-chip-icon">🛒</span>
+        <span class="shop-chip-money" id="moneyTop">0 ₽</span>
+      </button>
+    </header>
+
+    <main class="layout">
+      <section class="panel hero-panel is-active" data-panel="hero" aria-label="Боец">
+        <article class="hero-card">
+          <div class="hero-top">
+            <div class="avatar" aria-hidden="true">🪖<span class="avatar-star">★</span></div>
+            <div class="hero-id">
+              <div class="eyebrow">личное дело</div>
+              <h1 id="heroName">Срочник</h1>
+              <div class="rank-row">
+                <span class="rank-badge" id="rankBadge">🪖 Рядовой</span>
+                <span class="lvl-chip" id="lvlChip">ур. 1</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-block">
+            <div class="row-label"><span>Опыт службы</span><span id="xpLabel">0 / 50</span></div>
+            <div class="bar"><i class="fill xp" id="xpBar"></i></div>
+          </div>
+
+          <div class="stats">
+            <div class="stat">
+              <div class="row-label"><span>❤️ Здоровье</span><b id="hpVal">100</b></div>
+              <div class="bar"><i class="fill hp" id="hpBar"></i></div>
+              <div class="micro" id="hpHint">+1 каждые 30 сек</div>
+            </div>
+            <div class="stat">
+              <div class="row-label"><span>⚡ Энергия</span><b id="energyVal">100</b></div>
+              <div class="bar"><i class="fill energy" id="energyBar"></i></div>
+              <div class="micro" id="energyHint">+1 каждые 8 сек</div>
+            </div>
+            <div class="stat">
+              <div class="row-label"><span>🔥 Боевой дух</span><b id="moraleVal">75</b></div>
+              <div class="bar"><i class="fill morale" id="moraleBar"></i></div>
+              <div class="micro" id="moraleHint">доход ×1.08</div>
+            </div>
+          </div>
+
+          <div class="hero-meta">
+            <div class="meta-cell"><span>До дембеля</span><b id="daysLeft">365 дней</b></div>
+            <div class="meta-cell"><span>В нарядах</span><b id="dutyCount">0</b></div>
+          </div>
+
+          <blockquote class="quote" id="quote">«Дембель неизбежен, как подъём в шесть утра.»</blockquote>
+        </article>
+
+        <article class="card daily-card">
+          <div class="card-head">
+            <h2>Задания дня</h2>
+            <span class="card-note">до полуночи</span>
+          </div>
+          <ul class="daily-list" id="dailyList"></ul>
+        </article>
+
+        <article class="card staff-card" id="staffCard">
+          <div class="card-head">
+            <h2>Штаб</h2>
+            <span class="card-note">локально</span>
+          </div>
+          <div class="staff-grid">
+            <button class="staff-btn staff-wide" id="contractBtn">
+              <span class="staff-icon" aria-hidden="true">📄</span>
+              <span class="staff-body">
+                <b id="contractTitle">Контракт</b>
+                <small id="contractNote">Доступен после половины службы</small>
+              </span>
+              <span class="staff-arrow" id="contractArrow" aria-hidden="true">🔒</span>
+            </button>
+            <button class="staff-btn" id="leaderboardBtn" disabled>
+              <span class="staff-icon" aria-hidden="true">🏆</span>
+              <span class="staff-body">
+                <b>Рейтинг роты</b>
+                <small id="staffPosition">🔒 доступ после контракта</small>
+              </span>
+            </button>
+            <button class="staff-btn" id="achievementsBtn">
+              <span class="staff-icon" aria-hidden="true">🎖️</span>
+              <span class="staff-body">
+                <b>Достижения</b>
+                <small id="staffAch">Открыто 0 из 12</small>
+              </span>
+            </button>
+            <button class="staff-btn staff-wide" id="demobAlbumBtn" hidden>
+              <span class="staff-icon" aria-hidden="true">😎</span>
+              <span class="staff-body">
+                <b>Дембельский альбом</b>
+                <small>365 дней позади</small>
+              </span>
+              <span class="staff-arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+        </article>
+
+        <div class="hero-footer">
+          <span class="hint-text">Прогресс сохраняется на этом устройстве</span>
+          <button class="link-btn" id="resetBtn">начать заново</button>
+        </div>
+      </section>
+
+      <section class="panel actions-panel" data-panel="actions" aria-label="Казарма">
+        <div class="panel-head">
+          <div>
+            <h2>Казарма</h2>
+            <p class="panel-sub">Выбери занятие: энергия тратится, опыт и деньги капают.</p>
+          </div>
+          <span class="live-chip"><i></i> смена идёт</span>
+        </div>
+        <div class="action-grid" id="actionGrid"></div>
+        <p class="tip">💡 Звонок маме — лучший способ поднять боевой дух. Не пропускай.</p>
+      </section>
+
+      <section class="panel log-panel" data-panel="log" aria-label="События">
+        <article class="card log-card">
+          <div class="card-head">
+            <h2>События</h2>
+            <span class="live-chip"><i></i> live</span>
+          </div>
+          <ul class="log" id="log" aria-live="polite"></ul>
+          <p class="log-tip">Каждое действие может обернуться неожиданностью 😉</p>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <nav class="bottom-nav" aria-label="Навигация">
+    <button class="nav-btn is-active" data-tab="hero"><span class="nav-icon">👤</span><span>Боец</span></button>
+    <button class="nav-btn" data-tab="actions"><span class="nav-icon">🏛️</span><span>Казарма</span></button>
+    <button class="nav-btn" data-tab="log"><span class="nav-icon">📜</span><span>События</span></button>
+  </nav>
+
+  <div class="demob" id="demob" aria-hidden="true">
+    <div class="demob-confetti" id="demobConfetti" aria-hidden="true"></div>
+    <div class="demob-inner">
+      <button class="icon-btn demob-close" id="demobClose" aria-label="Закрыть">✕</button>
+      <div class="demob-badge" aria-hidden="true">😎</div>
+      <div class="demob-kicker">служба окончена</div>
+      <h2 class="demob-title">ДЕМБЕЛЬ!</h2>
+      <p class="demob-text" id="demobText">Год позади. Портянки сняты, берцы начищены, альбом собран.</p>
+      <div class="demob-stats" id="demobStats"></div>
+      <div class="demob-actions">
+        <button class="btn btn-primary" id="demobStay">Остаться в казарме</button>
+        <button class="btn btn-ghost" id="demobNew">Новая служба</button>
+      </div>
+      <p class="demob-note">Дембельский альбом всегда доступен в «Штабе».</p>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <div class="modal" id="modal" aria-hidden="true">
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
