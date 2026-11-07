@@ -8,9 +8,10 @@ const ENERGY_MS = 8000;
 const HP_MS = 30000;
 const EVENT_CHANCE = 0.16;
 const MAX_LOG = 40;
-const MAX_LEVEL_XP = 1400;
+const MAX_LEVEL_XP = 6000;
 const LEVELS_PER_RANK = 10;
 const CONTRACT_XP = MAX_LEVEL_XP / 2;
+const ACTION_COOLDOWN_SCALE = 2;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -90,12 +91,12 @@ function haptic(kind = 'light') {
 
 const RANKS = [
   { xp: 0, title: 'Рядовой', emoji: '🪖' },
-  { xp: 50, title: 'Ефрейтор', emoji: '🎖️' },
-  { xp: 140, title: 'Младший сержант', emoji: '🎖️' },
-  { xp: 300, title: 'Сержант', emoji: '🥇' },
-  { xp: 550, title: 'Старшина', emoji: '🏅' },
-  { xp: 900, title: 'Прапорщик', emoji: '⭐' },
-  { xp: 1400, title: 'Дембель', emoji: '😎' }
+  { xp: 400, title: 'Ефрейтор', emoji: '🎖️' },
+  { xp: 1000, title: 'Младший сержант', emoji: '🎖️' },
+  { xp: 1800, title: 'Сержант', emoji: '🥇' },
+  { xp: 2900, title: 'Старшина', emoji: '🏅' },
+  { xp: 4300, title: 'Прапорщик', emoji: '⭐' },
+  { xp: 6000, title: 'Дембель', emoji: '😎' }
 ];
 
 const ACTIONS = [
@@ -373,14 +374,14 @@ const DAILY_TASKS = [
 ];
 
 const BOTS = [
-  { name: 'Пупкин', emoji: '🪖', xp: 40 },
-  { name: 'Сидоров', emoji: '👓', xp: 130 },
-  { name: 'Кузнецов', emoji: '🧢', xp: 280 },
-  { name: 'Мамкин', emoji: '📞', xp: 430 },
-  { name: 'Шнурок', emoji: '👟', xp: 650 },
-  { name: 'Батя', emoji: '🫡', xp: 890 },
-  { name: 'Соловей', emoji: '🎤', xp: 1180 },
-  { name: 'Дизель', emoji: '⚡', xp: 1480 }
+  { name: 'Пупкин', emoji: '🪖', xp: 180 },
+  { name: 'Сидоров', emoji: '👓', xp: 560 },
+  { name: 'Кузнецов', emoji: '🧢', xp: 1200 },
+  { name: 'Мамкин', emoji: '📞', xp: 1900 },
+  { name: 'Шнурок', emoji: '👟', xp: 3200 },
+  { name: 'Батя', emoji: '🫡', xp: 4400 },
+  { name: 'Соловей', emoji: '🎤', xp: 5200 },
+  { name: 'Дизель', emoji: '⚡', xp: 6400 }
 ];
 
 const ACHIEVEMENTS = [
@@ -1290,7 +1291,7 @@ function updateActionStates() {
 
     if (remain > 0) {
       ref.status.textContent = `⏱ ${fmtRemain(remain)}`;
-      ref.line.style.width = `${clamp((1 - remain / (action.cooldown * 1000)) * 100, 0, 100)}%`;
+      ref.line.style.width = `${clamp((1 - remain / (action.cooldown * ACTION_COOLDOWN_SCALE * 1000)) * 100, 0, 100)}%`;
     } else {
       ref.status.textContent = lowEnergy ? `нужно ⚡${action.energy}` : 'готово';
       ref.line.style.width = '0%';
@@ -1416,7 +1417,7 @@ function doAction(id) {
 
   state.money += moneyGain;
   state.morale = clamp(state.morale + moraleGain, 0, 100);
-  state.cooldowns[id] = now + action.cooldown * 1000;
+  state.cooldowns[id] = now + action.cooldown * ACTION_COOLDOWN_SCALE * 1000;
   if (action.duty) state.stats.duties += 1;
   state.stats.totalEarned += moneyGain;
   state.stats.actionsTotal = (state.stats.actionsTotal || 0) + 1;
