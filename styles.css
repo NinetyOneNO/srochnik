@@ -104,9 +104,8 @@ button:focus-visible {
   top: calc(6px + var(--safe-t));
   z-index: 30;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
   padding: 9px 10px;
   margin-bottom: 14px;
   border: 1px solid var(--line);
@@ -114,6 +113,53 @@ button:focus-visible {
   background: rgba(20, 24, 16, .74);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+}
+
+.topbar-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.topbar-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rank-mini {
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.energy-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 118px;
+}
+
+.energy-inline .bar {
+  flex: 1;
+  height: 6px;
+  min-width: 46px;
+}
+
+.energy-inline b {
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.energy-inline-icon {
+  font-size: 12px;
+  font-family: var(--emoji);
 }
 
 .brand {
@@ -704,6 +750,16 @@ button:focus-visible {
   opacity: .58;
 }
 
+.action-card.is-blocked {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.action-card.is-blocked .action-status {
+  max-width: 108px;
+  color: #ff9d8f;
+}
+
 .action-icon {
   width: 44px;
   height: 44px;
@@ -951,7 +1007,7 @@ button:focus-visible {
   transform: translateX(-50%);
   z-index: 50;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 4px;
   width: calc(100% - 22px);
   max-width: 430px;
@@ -1280,6 +1336,48 @@ button:focus-visible {
 .buy-btn:disabled {
   opacity: .45;
   cursor: not-allowed;
+}
+
+.shop-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.shop-card .wallet {
+  margin-top: 0;
+}
+
+.trips {
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 11px;
+  border: 1px solid rgba(183, 227, 74, .18);
+  background: rgba(183, 227, 74, .06);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #cfe3a6;
+}
+
+.trips b {
+  color: var(--lime);
+  font-size: 12px;
+}
+
+.trips.is-empty {
+  border-color: rgba(255, 157, 143, .28);
+  background: rgba(255, 157, 143, .08);
+  color: #ffb0a4;
+}
+
+.trips.is-empty b {
+  color: #ff9d8f;
+}
+
+.shop-note {
+  margin: 12px 2px 0;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 
 .w-full {
@@ -1879,6 +1977,7 @@ body.demob-open {
     grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
     grid-template-areas:
       "hero actions"
+      "hero shop"
       "hero log";
     gap: 16px;
     align-items: start;
@@ -1886,6 +1985,7 @@ body.demob-open {
 
   .hero-panel { grid-area: hero; }
   .actions-panel { grid-area: actions; }
+  .shop-panel { grid-area: shop; }
   .log-panel { grid-area: log; }
 
   .panel {
@@ -1898,7 +1998,7 @@ body.demob-open {
   }
 
   .log-card {
-    max-height: calc(100dvh - 150px);
+    max-height: calc(100dvh - 168px);
   }
 
   .log {
@@ -1935,17 +2035,19 @@ body.demob-open {
 @media (min-width: 1120px) {
   .layout {
     grid-template-columns: 318px minmax(0, 1fr) 336px;
-    grid-template-areas: "hero actions log";
+    grid-template-areas:
+      "hero actions log"
+      "hero shop log";
     gap: 18px;
   }
 
   .log-panel {
     position: sticky;
-    top: 88px;
+    top: 104px;
   }
 
   .log-card {
-    max-height: calc(100dvh - 118px);
+    max-height: calc(100dvh - 128px);
   }
 
   .hero-id h1 {
@@ -1964,6 +2066,14 @@ body.demob-open {
 
   .quote {
     font-size: 10px;
+  }
+
+  .rank-mini {
+    max-width: 40vw;
+  }
+
+  .energy-inline {
+    min-width: 96px;
   }
 }
 

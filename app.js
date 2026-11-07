@@ -110,6 +110,8 @@ const ACTIONS = [
     money: [0, 0],
     morale: 2,
     cooldown: 25,
+    busy: 20,
+    blocks: ['call'],
     flavor: [
       'Кросс сдан. Плац остался позади.',
       'Подтянулся двенадцать раз. Командир кивнул.',
@@ -126,6 +128,8 @@ const ACTIONS = [
     money: [45, 75],
     morale: -1,
     cooldown: 50,
+    busy: 60,
+    blocks: ['guard', 'charge', 'drill', 'call', 'help'],
     duty: true,
     flavor: [
       'Три ведра картошки — и ни одной мозоли.',
@@ -143,6 +147,8 @@ const ACTIONS = [
     money: [0, 0],
     morale: 1,
     cooldown: 60,
+    busy: 25,
+    blocks: ['call'],
     flavor: [
       'Шаг чеканил так, что гул пошёл по плацу.',
       '«Раз-два, левой!» — и ты в идеальном строю.',
@@ -159,6 +165,8 @@ const ACTIONS = [
     money: [100, 160],
     morale: -3,
     cooldown: 180,
+    busy: 80,
+    blocks: ['potato', 'charge', 'drill', 'call', 'help'],
     duty: true,
     flavor: [
       'Смена прошла спокойно. Даже ворон не пролетел.',
@@ -176,6 +184,8 @@ const ACTIONS = [
     money: [30, 90],
     morale: 3,
     cooldown: 90,
+    busy: 30,
+    blocks: ['guard', 'potato'],
     duty: true,
     flavor: [
       'Прапорщик остался доволен. Это редкость.',
@@ -193,19 +203,13 @@ const ACTIONS = [
     money: [0, 0],
     morale: 14,
     cooldown: 150,
+    busy: 30,
+    blocks: ['charge', 'drill', 'guard', 'potato', 'help'],
     flavor: [
       'Мама передала привет и посылку с печеньем.',
       '«Кушаешь ли ты там?» — спросила мама. Ты соврал: да.',
       'Пять минут разговора — и как будто дома побывал.'
     ]
-  },
-  {
-    id: 'shop',
-    icon: '🛒',
-    title: 'Чипок',
-    desc: 'Энергетик, пирожок и другие радости',
-    energy: 0,
-    shop: true
   }
 ];
 
@@ -505,7 +509,9 @@ function defaultState() {
     maxHp: 100,
     morale: 75,
     cooldowns: {},
+    busy: { id: null, until: 0 },
     purchases: { boots: 0 },
+    shopTrips: { date: todayKey(), used: 0 },
     daily: {
       date: todayKey(),
       progress: { duty: 0, earn: 0, call: 0 },
@@ -558,6 +564,14 @@ function loadState() {
       contract: Boolean(saved.contract),
       purchases: { ...base.purchases, ...(saved.purchases || {}) },
       cooldowns: saved.cooldowns || {},
+      busy: {
+        id: saved.busy?.id && ACTIONS.some((a) => a.id === saved.busy.id) ? saved.busy.id : null,
+        until: Number(saved.busy?.until) || 0
+      },
+      shopTrips: {
+        date: saved.shopTrips?.date || base.shopTrips.date,
+        used: Math.max(0, Number(saved.shopTrips?.used) || 0)
+      },
       log: Array.isArray(saved.log) ? saved.log : []
     };
 
@@ -672,12 +686,34 @@ function daysUntilContract() {
   return Math.max(1, daysUntilDemob() - halfDays);
 }
 
+function shopTripsLimit() {
+  return 1 + rankIndexFor(state.xp);
+}
+
+function shopTripsLeft() {
+  return Math.max(0, shopTripsLimit() - (state.shopTrips?.used || 0));
+}
+
+function busyAction() {
+  if (!state.busy?.id) return null;
+  if (state.busy.until <= Date.now()) return null;
+  return ACTIONS.find((a) => a.id === state.busy.id) || null;
+}
+
+function busyBlockerFor(actionId) {
+  const blocker = busyAction();
+  if (!blocker) return null;
+  return (blocker.blocks || []).includes(actionId) ? blocker : null;
+}
+
 /* ---------- DOM ---------- */
 
 const els = {
   heroName: $('#heroName'),
   rankBadge: $('#rankBadge'),
   lvlChip: $('#lvlChip'),
+  rankBadgeTop: $('#rankBadgeTop'),
+  lvlChipTop: $('#lvlChipTop'),
   xpLabel: $('#xpLabel'),
   xpBar: $('#xpBar'),
   hpVal: $('#hpVal'),
@@ -685,13 +721,16 @@ const els = {
   hpHint: $('#hpHint'),
   energyVal: $('#energyVal'),
   energyBar: $('#energyBar'),
-  energyHint: $('#energyHint'),
   moraleVal: $('#moraleVal'),
   moraleBar: $('#moraleBar'),
   moraleHint: $('#moraleHint'),
   daysLeft: $('#daysLeft'),
   dutyCount: $('#dutyCount'),
   moneyTop: $('#moneyTop'),
+  shopMoney: $('#shopMoney'),
+  shopTrips: $('#shopTrips'),
+  shopList: $('#shopList'),
+  shopNote: $('#shopNote'),
   dailyList: $('#dailyList'),
   staffPosition: $('#staffPosition'),
   staffAch: $('#staffAch'),
@@ -723,6 +762,8 @@ function renderHero() {
   els.heroName.textContent = state.name;
   els.rankBadge.textContent = `${r.rank.emoji} ${r.rank.title}`;
   els.lvlChip.textContent = `ур. ${r.level} / ${r.levels}`;
+  if (els.rankBadgeTop) els.rankBadgeTop.textContent = `${r.rank.emoji} ${r.rank.title}`;
+  if (els.lvlChipTop) els.lvlChipTop.textContent = `ур. ${r.level} / ${r.levels}`;
 
   if (r.next) {
     els.xpLabel.textContent = `${r.into} / ${r.span} XP`;
@@ -736,9 +777,8 @@ function renderHero() {
   els.hpHint.textContent = state.hp < 25 ? '❕ доход снижен — нужно подлечиться' : `+1 каждые ${HP_MS / 1000} сек`;
   els.hpHint.classList.toggle('is-alert', state.hp < 25);
 
-  els.energyVal.textContent = Math.round(state.energy);
+  els.energyVal.textContent = `${Math.round(state.energy)}/${state.maxEnergy}`;
   els.energyBar.style.width = `${clamp((state.energy / state.maxEnergy) * 100, 0, 100)}%`;
-  els.energyHint.textContent = `+1 каждые ${ENERGY_MS / 1000} сек`;
 
   els.moraleVal.textContent = Math.round(state.morale);
   els.moraleBar.style.width = `${clamp(state.morale, 0, 100)}%`;
@@ -836,9 +876,11 @@ function checkDailyReset(notify = true) {
     progress: { duty: 0, earn: 0, call: 0 },
     done: {}
   };
+  state.shopTrips = { date: todayKey(), used: 0 };
   renderDaily();
+  renderShopPanel();
   save();
-  if (notify) toast('🌅 Новый день службы — задания обновились', 'info');
+  if (notify) toast('🌅 Новый день службы — задания и походы в чипок обновились', 'info');
   return true;
 }
 
@@ -915,6 +957,7 @@ function renderAll() {
   renderHero();
   renderDaily();
   renderStaff();
+  renderShopPanel();
   updateActionStates();
   renderMoney();
 }
@@ -1219,21 +1262,16 @@ let demobPending = false;
 /* ---------- actions render ---------- */
 
 function actionRewardLabel(action) {
-  if (action.shop) return '🛒';
   if (action.money && action.money[1] > 0) return `+${action.money[0]}–${action.money[1]} ₽`;
   if (action.morale) return `${action.morale > 0 ? '+' : ''}${action.morale} 🔥`;
   return 'опыт';
 }
 
 function actionCardHtml(action) {
-  const chips = [];
-
-  if (action.shop) {
-    chips.push('<span class="chip-money">цены как в ларьке</span>');
-  } else {
-    chips.push(`<span class="chip-cost">⚡ ${action.energy}</span>`);
-    chips.push(`<span>+${action.xp[0]}–${action.xp[1]} XP</span>`);
-  }
+  const chips = [
+    `<span class="chip-cost">⚡ ${action.energy}</span>`,
+    `<span>+${action.xp[0]}–${action.xp[1]} XP</span>`
+  ];
 
   return `
     <button class="action-card" data-action="${action.id}" aria-label="${action.title}">
@@ -1276,22 +1314,21 @@ function updateActionStates() {
     const ref = cardEls.get(action.id);
     if (!ref) return;
 
-    if (action.shop) {
-      ref.root.classList.remove('is-cd', 'is-locked');
-      ref.status.textContent = 'открыть';
-      ref.line.style.width = '0%';
-      return;
-    }
-
     const remain = (state.cooldowns[action.id] || 0) - now;
+    const blocker = busyBlockerFor(action.id);
     const lowEnergy = state.energy < action.energy;
+    const blocked = remain <= 0 && Boolean(blocker);
 
     ref.root.classList.toggle('is-cd', remain > 0);
-    ref.root.classList.toggle('is-locked', remain <= 0 && lowEnergy);
+    ref.root.classList.toggle('is-locked', remain <= 0 && !blocker && lowEnergy);
+    ref.root.classList.toggle('is-blocked', blocked);
 
     if (remain > 0) {
       ref.status.textContent = `⏱ ${fmtRemain(remain)}`;
       ref.line.style.width = `${clamp((1 - remain / (action.cooldown * ACTION_COOLDOWN_SCALE * 1000)) * 100, 0, 100)}%`;
+    } else if (blocked) {
+      ref.status.textContent = `⛔ ${blocker.title}`;
+      ref.line.style.width = '0%';
     } else {
       ref.status.textContent = lowEnergy ? `нужно ⚡${action.energy}` : 'готово';
       ref.line.style.width = '0%';
@@ -1319,7 +1356,7 @@ function addXp(amount) {
   pushLog({
     icon: '🎖️',
     text: `Новое звание — ${rank.title}!`,
-    gains: [`+${3 * levels} ⚡ макс.`],
+    gains: [`+${3 * levels} ⚡ макс.`, `+${levels} 🛒`],
     type: 'level'
   });
 
@@ -1388,17 +1425,18 @@ function doAction(id) {
   const action = ACTIONS.find((a) => a.id === id);
   if (!action) return;
 
-  if (action.shop) {
-    haptic();
-    openModal(renderShop);
-    return;
-  }
-
   const now = Date.now();
   const remaining = (state.cooldowns[id] || 0) - now;
 
   if (remaining > 0) {
     toast(`⏱ Ещё ${fmtRemain(remaining)} — рано`, 'info');
+    return;
+  }
+
+  const blocker = busyBlockerFor(id);
+  if (blocker) {
+    toast(`⛔ Сначала закончите: ${blocker.title.toLowerCase()}`, 'info');
+    haptic('error');
     return;
   }
 
@@ -1418,6 +1456,7 @@ function doAction(id) {
   state.money += moneyGain;
   state.morale = clamp(state.morale + moraleGain, 0, 100);
   state.cooldowns[id] = now + action.cooldown * ACTION_COOLDOWN_SCALE * 1000;
+  if (action.busy) state.busy = { id, until: now + action.busy * 1000 };
   if (action.duty) state.stats.duties += 1;
   state.stats.totalEarned += moneyGain;
   state.stats.actionsTotal = (state.stats.actionsTotal || 0) + 1;
@@ -1499,6 +1538,7 @@ function renderLevelSheet(el, rank, levels) {
     <div class="sheet-rewards">
       <span class="reward-pill">+${levels * 3} ⚡ к максимуму</span>
       <span class="reward-pill">+${levels * 15} ❤️</span>
+      <span class="reward-pill">+${levels} ${plural(levels, 'поход', 'похода', 'походов')} в чипок</span>
     </div>
     <button class="btn btn-primary" data-close>Служу Отечеству!</button>
   `;
@@ -1516,12 +1556,25 @@ function renderEventSheet(el, result) {
   `;
 }
 
-function renderShop(el) {
-  const items = SHOP.map((item) => {
+function renderShopPanel() {
+  if (!els.shopList) return;
+
+  const left = shopTripsLeft();
+  const limit = shopTripsLimit();
+  const noTrips = left <= 0;
+
+  els.shopMoney.textContent = rub(state.money);
+  els.shopTrips.innerHTML = `Походы в чипок: <b>${left}</b> из ${limit}`;
+  els.shopTrips.classList.toggle('is-empty', noTrips);
+  els.shopNote.textContent = noTrips
+    ? 'Походы на сегодня закончились. Новые дадут за звание или завтра.'
+    : 'Один поход — одна покупка. Каждое новое звание добавляет поход, а лимит обновляется каждый день.';
+
+  els.shopList.innerHTML = SHOP.map((item) => {
     const bought = state.purchases[item.id] || 0;
     const soldOut = Boolean(item.max) && bought >= item.max;
     const poor = state.money < item.price;
-    const label = soldOut ? 'макс.' : rub(item.price);
+    const label = soldOut ? 'макс.' : (noTrips ? 'нет походов' : rub(item.price));
 
     return `
       <li class="shop-item ${soldOut ? 'is-sold' : ''}">
@@ -1530,35 +1583,23 @@ function renderShop(el) {
           <b>${item.name}</b>
           <span>${item.desc}</span>
         </div>
-        <button class="buy-btn ${poor && !soldOut ? 'is-poor' : ''}" data-buy="${item.id}" ${soldOut ? 'disabled' : ''}>${label}</button>
+        <button class="buy-btn ${poor && !soldOut && !noTrips ? 'is-poor' : ''}" data-buy="${item.id}" ${soldOut || noTrips ? 'disabled' : ''}>${label}</button>
       </li>
     `;
   }).join('');
-
-  el.innerHTML = `
-    <div class="sheet-handle"></div>
-    <div class="sheet-head">
-      <div>
-        <h3 class="sheet-title">Чипок</h3>
-        <p class="sheet-sub">Всё для бойца. Дорого, но по-дружески.</p>
-      </div>
-      <button class="icon-btn" data-close aria-label="Закрыть">✕</button>
-    </div>
-    <div class="wallet"><span>💰 В кармане</span><b>${rub(state.money)}</b></div>
-    <ul class="shop-list">${items}</ul>
-    <button class="btn btn-ghost" data-close>Закрыть</button>
-  `;
-
-  $$('[data-buy]', el).forEach((btn) => {
-    btn.addEventListener('click', () => buyItem(btn.dataset.buy, el));
-  });
 }
 
-function buyItem(id, el) {
+function buyItem(id) {
   const item = SHOP.find((i) => i.id === id);
   if (!item) return;
 
   const bought = state.purchases[id] || 0;
+
+  if (shopTripsLeft() <= 0) {
+    toast('🛒 Походы в чипок закончились — новые дадут за звание или завтра', 'info');
+    haptic('error');
+    return;
+  }
 
   if (item.max && bought >= item.max) {
     toast('Больше не продаём — склад пуст', 'info');
@@ -1578,6 +1619,7 @@ function buyItem(id, el) {
 
   state.money -= item.price;
   state.purchases[id] = bought + 1;
+  state.shopTrips.used = (state.shopTrips.used || 0) + 1;
   state.stats.buys = (state.stats.buys || 0) + 1;
   item.apply();
 
@@ -1591,9 +1633,8 @@ function buyItem(id, el) {
   checkAchievements();
   save();
   renderAll();
-  renderShop(el);
 
-  toast(`${item.icon} ${item.name} — куплено`, 'good');
+  toast(`${item.icon} ${item.name} — куплено · походов осталось: ${shopTripsLeft()}`, 'good');
   haptic('success');
 }
 
@@ -1643,6 +1684,11 @@ function setTab(tab) {
 function tick() {
   const now = Date.now();
   let changed = false;
+
+  if (state.busy?.id && state.busy.until <= now) {
+    state.busy = { id: null, until: 0 };
+    changed = true;
+  }
 
   if (state.energy < state.maxEnergy) {
     const gain = Math.floor((now - state.lastEnergyAt) / ENERGY_MS);
@@ -1716,8 +1762,15 @@ function bindEvents() {
 
   $('#shopBtn').addEventListener('click', () => {
     haptic();
-    openModal(renderShop);
+    setTab('shop');
   });
+
+  if (els.shopList) {
+    els.shopList.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-buy]');
+      if (btn) buyItem(btn.dataset.buy);
+    });
+  }
 
   $('#resetBtn').addEventListener('click', () => {
     haptic();
