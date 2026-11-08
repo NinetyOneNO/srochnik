@@ -1064,6 +1064,24 @@ let cloudConflict = false;
 let cloudTimer = null;
 let cloudInitFailed = false;
 let cloudChecking = false;
+const cloudSessionId = crypto.randomUUID();
+let sessionExpired = false;
+
+function expireSession() {
+  if (sessionExpired) return;
+  sessionExpired = true;
+  cloudReady = false;
+  cloudPending = false;
+  clearTimeout(cloudTimer);
+  clearTimeout(saveTimer);
+  try { localStorage.setItem(SAVE_KEY + '.backup', JSON.stringify(state)); } catch { /* ignore */ }
+  const overlay = document.createElement('div');
+  overlay.className = 'session-expired';
+  overlay.innerHTML = '<div><h2>Вход с другого устройства</h2><p>Эта сессия завершена. Чтобы продолжить здесь, откройте игру заново — другая сессия завершится.</p><button id="sessionRestart">Открыть заново</button></div>';
+  document.body.appendChild(overlay);
+  document.getElementById('sessionRestart').addEventListener('click', () => location.reload());
+  cloudStatus('Сессия завершена: вход с другого устройства');
+}
 
 function adoptCloud(result, notify = false) {
   try { localStorage.setItem(SAVE_KEY + '.backup', JSON.stringify(state)); } catch { /* keep cloud copy */ }
@@ -1094,6 +1112,7 @@ async function refreshCloud() {
       adoptCloud(result, true);
     }
   } catch {
+    if (sessionExpired) return;
     cloudStatus('Нет связи с облаком. Прогресс сохранён на устройстве.');
   } finally { cloudChecking = false; }
 }
@@ -1106,10 +1125,11 @@ function cloudStatus(message) {
 async function cloudRequest(mode, data, revision) {
   const response = await fetch(CLOUD_URL, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ initData: tg.initData, mode, data, revision }),
+    body: JSON.stringify({ initData: tg.initData, sessionId: cloudSessionId, mode, data, revision }),
     signal: AbortSignal.timeout(15000)
   });
   const result = await response.json();
+  if (result.session_expired) { expireSession(); throw new Error('session expired'); }
   if (response.status === 409) return { conflict: true };
   if (!response.ok) throw new Error('cloud request failed');
   return result;
@@ -1150,6 +1170,7 @@ async function flushCloudSave() {
       cloudStatus('Прогресс сохранён в аккаунте Telegram');
     }
   } catch {
+    if (sessionExpired) return;
     cloudPending = true;
     setCloudMeta({ ...cloudMeta(), dirty: true });
     cloudStatus('Не удалось сохранить в облаке. Прогресс на устройстве; перезапустите игру для сверки.');
@@ -1170,7 +1191,7 @@ async function initializeCloud() {
   const user = String(tg.initDataUnsafe.user.id);
   try {
     cloudStatus('Загрузка сохранения аккаунта…');
-    const result = await cloudRequest('load');
+    const result = await cloudRequest('login');
     if (result.exists) {
       const useLocal = Boolean(localRaw && localMeta.user === user && localMeta.dirty && localMeta.revision === result.revision);
       if (localRaw && !useLocal && (!localMeta.user || localMeta.revision !== result.revision)) {
@@ -1192,6 +1213,7 @@ async function initializeCloud() {
     setCloudMeta({ user, revision: cloudRevision, dirty: cloudPending });
     cloudStatus('Аккаунт Telegram подключён');
   } catch {
+    if (sessionExpired) return;
     cloudInitFailed = true;
     cloudReady = false;
     if (localMeta.user === user) setCloudMeta({ ...localMeta, dirty: true });
@@ -1205,7 +1227,7 @@ function save() {
 }
 
 function saveNow() {
-  if (isResetting) return;
+  if (isResetting || sessionExpired) return;
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
     if ((cloudInitFailed || (!cloudReady && cloudMeta().user)) && tg?.initDataUnsafe?.user?.id) {

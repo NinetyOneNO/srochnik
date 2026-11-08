@@ -2449,6 +2449,11 @@ body.demob-open {
   color: var(--muted);
 }
 
+.session-expired { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 24px; background: rgba(5, 7, 3, .96); }
+.session-expired > div { max-width: 420px; padding: 28px; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--card); text-align: center; }
+.session-expired p { margin: 14px 0 20px; color: var(--muted); line-height: 1.5; }
+.session-expired button { padding: 12px 20px; border: 0; border-radius: 10px; background: var(--lime); color: #141a0c; font-weight: 800; cursor: pointer; }
+
 @media (min-width: 720px) {
   .app { max-width: 900px; padding-bottom: calc(110px + var(--safe-b)); }
   .layout { display: flex; max-width: 760px; margin: 0 auto; }
