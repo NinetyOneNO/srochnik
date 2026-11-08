@@ -1058,11 +1058,45 @@ const CLOUD_URL = 'https://kxuwpsfkjeyzsytclsys.supabase.co/functions/v1/telegra
 const CLOUD_META_KEY = 'srochnik.cloud.meta.v1';
 let cloudRevision = null;
 let cloudReady = false;
-  let cloudPending = false;
+let cloudPending = false;
 let cloudSaving = false;
 let cloudConflict = false;
 let cloudTimer = null;
 let cloudInitFailed = false;
+let cloudChecking = false;
+
+function adoptCloud(result, notify = false) {
+  try { localStorage.setItem(SAVE_KEY + '.backup', JSON.stringify(state)); } catch { /* keep cloud copy */ }
+  const loaded = loadState(JSON.stringify(result.data));
+  Object.keys(state).forEach((key) => delete state[key]);
+  Object.assign(state, loaded);
+  cloudRevision = result.revision;
+  cloudPending = false;
+  cloudConflict = false;
+  setCloudMeta({ user: String(tg.initDataUnsafe.user.id), revision: cloudRevision, dirty: false });
+  localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+  applyOfflineRegen();
+  renderActions();
+  renderAll();
+  renderLog();
+  cloudStatus('Прогресс обновлён из аккаунта Telegram');
+  if (notify) toast('📱 Обнаружен вход или изменения на другом устройстве — данные обновлены', 'info');
+}
+
+async function refreshCloud() {
+  if (!cloudReady || cloudChecking || cloudSaving || isResetting) return;
+  cloudChecking = true;
+  try {
+    const result = await cloudRequest('load');
+    if (result.exists && result.revision !== cloudRevision) {
+      clearTimeout(cloudTimer);
+      clearTimeout(saveTimer);
+      adoptCloud(result, true);
+    }
+  } catch {
+    cloudStatus('Нет связи с облаком. Прогресс сохранён на устройстве.');
+  } finally { cloudChecking = false; }
+}
 
 function cloudStatus(message) {
   const el = document.querySelector('#cloudStatus');
@@ -1098,6 +1132,7 @@ function scheduleCloudSave() {
 
 async function flushCloudSave() {
   if (!cloudReady || cloudSaving || cloudConflict || !cloudPending) return;
+  if (cloudChecking) { clearTimeout(cloudTimer); cloudTimer = setTimeout(flushCloudSave, 1500); return; }
   cloudSaving = true;
   cloudPending = false;
   const snapshot = JSON.parse(JSON.stringify(state));
@@ -1105,10 +1140,10 @@ async function flushCloudSave() {
     cloudStatus('Сохранение в аккаунт…');
     const result = await cloudRequest('save', snapshot, cloudRevision);
     if (result.conflict) {
-      cloudConflict = true;
-      setCloudMeta({ ...cloudMeta(), dirty: true });
-      cloudStatus('Конфликт сохранений: прогресс этого устройства сохранён локально.');
-      alert('На другом устройстве появилось более новое сохранение. Чтобы не потерять прогресс, синхронизация остановлена. Откройте игру заново и выберите сохранение.');
+      const latest = await cloudRequest('load');
+      if (!latest.exists) throw new Error('cloud save unavailable');
+      clearTimeout(saveTimer);
+      adoptCloud(latest, true);
     } else {
       cloudRevision = result.revision;
       setCloudMeta({ user: String(tg.initDataUnsafe?.user?.id || ''), revision: cloudRevision, dirty: cloudPending });
@@ -1137,12 +1172,9 @@ async function initializeCloud() {
     cloudStatus('Загрузка сохранения аккаунта…');
     const result = await cloudRequest('load');
     if (result.exists) {
-      let useLocal = false;
-      if (localRaw && (!localMeta.user || localMeta.user !== user || (localMeta.dirty && localMeta.revision !== result.revision))) {
-        useLocal = confirm('Найдены сохранения на устройстве и в аккаунте. ОК — сохранить прогресс устройства в аккаунт. Отмена — загрузить прогресс аккаунта. Перед выбором резервная копия устройства будет сохранена в браузере.');
-        try { localStorage.setItem(SAVE_KEY + '.backup', localRaw); } catch { /* preserve original if possible */ }
-      } else if (localRaw && localMeta.user === user && localMeta.dirty && localMeta.revision === result.revision) {
-        useLocal = true;
+      const useLocal = Boolean(localRaw && localMeta.user === user && localMeta.dirty && localMeta.revision === result.revision);
+      if (localRaw && !useLocal && (!localMeta.user || localMeta.revision !== result.revision)) {
+        try { localStorage.setItem(SAVE_KEY + '.backup', localRaw); } catch { /* preserve when possible */ }
       }
       if (!useLocal) {
         const loaded = loadState(JSON.stringify(result.data));
@@ -2991,6 +3023,21 @@ function bindEvents() {
     toast(state.settings.sound ? '🔊 Звуки включены' : '🔇 Звуки выключены', 'info');
   });
   $('#notifyToggle').addEventListener('click', toggleNotifications);
+  $('#cloudSaveBtn').addEventListener('click', async () => {
+    if (!cloudReady) {
+      toast('☁️ Откройте игру в Telegram и проверьте соединение', 'info');
+      return;
+    }
+    if (cloudSaving || cloudChecking) {
+      toast('☁️ Синхронизация уже выполняется', 'info');
+      return;
+    }
+    clearTimeout(saveTimer);
+    saveNow();
+    clearTimeout(cloudTimer);
+    await flushCloudSave();
+    if (cloudReady && !cloudPending) toast('☁️ Сохранение синхронизировано', 'good');
+  });
   $('#tutorialBtn').addEventListener('click', () => showTutorial(true));
   $('#tutorialNext').addEventListener('click', advanceTutorial);
   $('#tutorialSkip').addEventListener('click', closeTutorial);
@@ -3069,6 +3116,15 @@ function bindEvents() {
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') saveNow();
+    else {
+      tick();
+      renderStatusLine();
+      refreshCloud();
+    }
+  });
+  window.addEventListener('pageshow', () => {
+    tick();
+    renderStatusLine();
   });
 }
 
@@ -3092,6 +3148,7 @@ async function boot() {
   }
 
   window.setInterval(tick, 1000);
+  window.setInterval(() => { if (!document.hidden) refreshCloud(); }, 15000);
   showTutorial();
 }
 
