@@ -956,10 +956,10 @@ function defaultState() {
   };
 }
 
-function loadState() {
+function loadState(rawOverride) {
   const base = defaultState();
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = rawOverride === undefined ? localStorage.getItem(SAVE_KEY) : rawOverride;
     if (!raw) return base;
     const saved = JSON.parse(raw);
     const savedBusy = saved.busy || {};
@@ -1054,6 +1054,118 @@ const state = loadState();
 
 let saveTimer = null;
 let isResetting = false;
+const CLOUD_URL = 'https://kxuwpsfkjeyzsytclsys.supabase.co/functions/v1/telegram-save';
+const CLOUD_META_KEY = 'srochnik.cloud.meta.v1';
+let cloudRevision = null;
+let cloudReady = false;
+  let cloudPending = false;
+let cloudSaving = false;
+let cloudConflict = false;
+let cloudTimer = null;
+let cloudInitFailed = false;
+
+function cloudStatus(message) {
+  const el = document.querySelector('#cloudStatus');
+  if (el) el.textContent = message;
+}
+
+async function cloudRequest(mode, data, revision) {
+  const response = await fetch(CLOUD_URL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ initData: tg.initData, mode, data, revision }),
+    signal: AbortSignal.timeout(15000)
+  });
+  const result = await response.json();
+  if (response.status === 409) return { conflict: true };
+  if (!response.ok) throw new Error('cloud request failed');
+  return result;
+}
+
+function cloudMeta() {
+  try { return JSON.parse(localStorage.getItem(CLOUD_META_KEY) || '{}'); } catch { return {}; }
+}
+
+function setCloudMeta(meta) {
+  try { localStorage.setItem(CLOUD_META_KEY, JSON.stringify(meta)); } catch { /* local storage unavailable */ }
+}
+
+function scheduleCloudSave() {
+  if (!cloudReady || cloudConflict || isResetting) return;
+  cloudPending = true;
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(flushCloudSave, 1500);
+}
+
+async function flushCloudSave() {
+  if (!cloudReady || cloudSaving || cloudConflict || !cloudPending) return;
+  cloudSaving = true;
+  cloudPending = false;
+  const snapshot = JSON.parse(JSON.stringify(state));
+  try {
+    cloudStatus('Сохранение в аккаунт…');
+    const result = await cloudRequest('save', snapshot, cloudRevision);
+    if (result.conflict) {
+      cloudConflict = true;
+      setCloudMeta({ ...cloudMeta(), dirty: true });
+      cloudStatus('Конфликт сохранений: прогресс этого устройства сохранён локально.');
+      alert('На другом устройстве появилось более новое сохранение. Чтобы не потерять прогресс, синхронизация остановлена. Откройте игру заново и выберите сохранение.');
+    } else {
+      cloudRevision = result.revision;
+      setCloudMeta({ user: String(tg.initDataUnsafe?.user?.id || ''), revision: cloudRevision, dirty: cloudPending });
+      cloudStatus('Прогресс сохранён в аккаунте Telegram');
+    }
+  } catch {
+    cloudPending = true;
+    setCloudMeta({ ...cloudMeta(), dirty: true });
+    cloudStatus('Не удалось сохранить в облаке. Прогресс на устройстве; перезапустите игру для сверки.');
+    cloudReady = false;
+  } finally {
+    cloudSaving = false;
+    if (cloudPending && cloudReady && !cloudConflict) { clearTimeout(cloudTimer); cloudTimer = setTimeout(flushCloudSave, 1500); }
+  }
+}
+
+async function initializeCloud() {
+  if (!tg?.initData || !tg.initDataUnsafe?.user?.id) {
+    cloudStatus('Локальное сохранение. Для синхронизации откройте игру в Telegram.');
+    return;
+  }
+  const localRaw = localStorage.getItem(SAVE_KEY);
+  const localMeta = cloudMeta();
+  const user = String(tg.initDataUnsafe.user.id);
+  try {
+    cloudStatus('Загрузка сохранения аккаунта…');
+    const result = await cloudRequest('load');
+    if (result.exists) {
+      let useLocal = false;
+      if (localRaw && (!localMeta.user || localMeta.user !== user || (localMeta.dirty && localMeta.revision !== result.revision))) {
+        useLocal = confirm('Найдены сохранения на устройстве и в аккаунте. ОК — сохранить прогресс устройства в аккаунт. Отмена — загрузить прогресс аккаунта. Перед выбором резервная копия устройства будет сохранена в браузере.');
+        try { localStorage.setItem(SAVE_KEY + '.backup', localRaw); } catch { /* preserve original if possible */ }
+      } else if (localRaw && localMeta.user === user && localMeta.dirty && localMeta.revision === result.revision) {
+        useLocal = true;
+      }
+      if (!useLocal) {
+        const loaded = loadState(JSON.stringify(result.data));
+        Object.keys(state).forEach((key) => delete state[key]);
+        Object.assign(state, loaded);
+        try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+      }
+      cloudRevision = result.revision;
+      cloudPending = useLocal;
+    } else {
+      cloudRevision = 0;
+      cloudPending = true;
+    }
+    cloudReady = true;
+    setCloudMeta({ user, revision: cloudRevision, dirty: cloudPending });
+    cloudStatus('Аккаунт Telegram подключён');
+  } catch {
+    cloudInitFailed = true;
+    cloudReady = false;
+    if (localMeta.user === user) setCloudMeta({ ...localMeta, dirty: true });
+    cloudStatus('Облако недоступно. Игра сохранится на устройстве; перезапустите её для синхронизации.');
+  }
+}
 
 function save() {
   clearTimeout(saveTimer);
@@ -1064,6 +1176,14 @@ function saveNow() {
   if (isResetting) return;
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+    if ((cloudInitFailed || (!cloudReady && cloudMeta().user)) && tg?.initDataUnsafe?.user?.id) {
+      const meta = cloudMeta();
+      if (!meta.user || meta.user === String(tg.initDataUnsafe.user.id)) setCloudMeta({ ...meta, user: String(tg.initDataUnsafe.user.id), dirty: true });
+    }
+    if (cloudReady && !cloudConflict) {
+      setCloudMeta({ ...cloudMeta(), dirty: true });
+      scheduleCloudSave();
+    }
   } catch (e) {
     /* storage may be unavailable */
   }
@@ -2640,7 +2760,7 @@ function renderResetConfirm(el) {
   el.innerHTML = `
     <div class="sheet-emoji">🔄</div>
     <h3 class="sheet-title">Начать службу заново?</h3>
-    <p class="sheet-text">Весь прогресс, деньги и звания сгорят. Как будто снова призыв.</p>
+    <p class="sheet-text">Весь прогресс, деньги и звания будут сброшены${cloudReady ? ' также в аккаунте Telegram' : ' на этом устройстве'}. Как будто снова призыв.</p>
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-close>Отмена</button>
       <button class="btn btn-danger" id="confirmReset">Сбросить</button>
@@ -2649,7 +2769,24 @@ function renderResetConfirm(el) {
 
   const btn = $('#confirmReset', el);
   if (btn) {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
+      if (tg?.initData && !cloudReady) {
+        toast('Для сброса подключитесь к облаку и перезапустите игру.', 'bad');
+        return;
+      }
+      if (cloudReady) {
+        if (cloudSaving || cloudConflict) { toast('Сначала разрешите конфликт или дождитесь сохранения', 'info'); return; }
+        btn.disabled = true;
+        try {
+          const result = await cloudRequest('save', defaultState(), cloudRevision);
+          if (result.conflict) throw new Error('conflict');
+          localStorage.removeItem(CLOUD_META_KEY);
+        } catch {
+          btn.disabled = false;
+          toast('Не удалось сбросить облачное сохранение. Проверьте соединение.', 'bad');
+          return;
+        }
+      }
       isResetting = true;
       clearTimeout(saveTimer);
       try {
@@ -2935,8 +3072,9 @@ function bindEvents() {
   });
 }
 
-function boot() {
+async function boot() {
   initTelegram();
+  await initializeCloud();
   applyOfflineRegen();
   checkDailyReset(false);
   seedLog();
