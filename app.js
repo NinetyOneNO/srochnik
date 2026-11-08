@@ -4,17 +4,19 @@
 'use strict';
 
 const SAVE_KEY = 'srochnik.save.v1';
-const ENERGY_MS = 8000;
-const HP_MS = 30000;
+const HOUR_MS = 3600000;
+const ENERGY_MS = 216000; // 3 минуты 36 секунд на +1 энергии
+const HP_MS = 216000; // здоровье восстанавливается так же
 const EVENT_CHANCE = 0.16;
 const MAX_LOG = 40;
 const SERVICE_DAYS = 365;
-const DAY_MS = 86400000;
-const HOUR_MS = 3600000;
+const DAY_MS = 12 * HOUR_MS; // игровой день длится 12 реальных часов
 const CONTRACT_DAY = 182; // половина службы
 const CONTRACT_RANK = 3; // младший сержант
 const PACKAGE_DELAY_MS = 2 * HOUR_MS;
 const LEAVE_COOLDOWN_MS = 7 * DAY_MS;
+const SHOP_MAX_TRIPS = 3;
+const SHOP_TRIP_MS = 30 * 60 * 1000; // +1 поход каждые 30 минут
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -64,6 +66,28 @@ function yesterdayKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function gameDayKeyFrom(startedAt, ts = Date.now()) {
+  const start = Number(startedAt) || ts;
+  return `g${Math.floor((ts - start) / DAY_MS)}`;
+}
+
+function gameDayKey(ts = Date.now()) {
+  return gameDayKeyFrom(state.startedAt, ts);
+}
+
+function fmtClock(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function regenLabel() {
+  return '3:36';
+}
+
 function fmtDuration(ms) {
   const totalMin = Math.max(1, Math.ceil(ms / 60000));
   if (totalMin >= 60) {
@@ -96,6 +120,126 @@ function haptic(kind = 'light') {
   } catch (e) {
     /* haptics may be unavailable */
   }
+}
+
+/* ---------- sound and notifications ---------- */
+
+let audioContext = null;
+
+function playSound(kind = 'click') {
+  if (!state?.settings?.sound) return;
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    audioContext = audioContext || new AudioContextClass();
+    if (audioContext.state === 'suspended') audioContext.resume();
+    const notes = {
+      click: [520], success: [660, 880], error: [220], coin: [880, 1175], level: [523, 659, 784, 1047]
+    }[kind] || [520];
+    const start = audioContext.currentTime;
+    notes.forEach((frequency, index) => {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const at = start + index * 0.085;
+      oscillator.type = kind === 'error' ? 'triangle' : 'sine';
+      oscillator.frequency.setValueAtTime(frequency, at);
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.045, at + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(at);
+      oscillator.stop(at + 0.13);
+    });
+  } catch (e) {
+    /* Web Audio may be unavailable or blocked by the host */
+  }
+}
+
+function notifyPlayer(title, body) {
+  if (!state.settings?.notify || !document.hidden || !('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  try {
+    new Notification(title, { body, tag: 'srochnik-' + title });
+  } catch (e) {
+    /* Notifications may be blocked inside an embedded webview */
+  }
+}
+
+async function toggleNotifications() {
+  if (state.settings.notify) {
+    state.settings.notify = false;
+  } else {
+    if (!('Notification' in window)) {
+      toast('🔔 Уведомления не поддерживаются в этом приложении', 'info');
+      return;
+    }
+    try {
+      const permission = Notification.permission === 'default'
+        ? await Notification.requestPermission()
+        : Notification.permission;
+      if (permission !== 'granted') {
+        toast('🔔 Разреши уведомления в настройках браузера', 'info');
+        return;
+      }
+      state.settings.notify = true;
+    } catch (e) {
+      toast('🔔 Уведомления недоступны в этом приложении', 'info');
+      return;
+    }
+  }
+  save();
+  renderSettings();
+  toast(state.settings.notify ? '🔔 Уведомления включены' : '🔕 Уведомления выключены', 'good');
+}
+
+/* ---------- first-run tutorial ---------- */
+
+const TUTORIAL_STEPS = [
+  { icon: '🏛️', title: 'Казарма', text: 'Выбирай занятие. Оно занимает указанное время, а пока идёт — другие занятия подождут. Энергия постепенно восстанавливается даже во время службы.' },
+  { icon: '⚡', title: 'Время и ресурсы', text: 'Игровой день длится 12 часов. По 1 энергии и здоровью возвращается каждые 3 минуты 36 секунд. Следи за балансом и выбирай занятия по силам.' },
+  { icon: '🛒', title: 'Чипок', text: 'Есть 3 похода за расходниками. Один поход восстанавливается каждые 30 минут. Постоянные апгрейды казармы можно покупать независимо от походов.' },
+  { icon: '🎖️', title: 'Служба и настройки', text: 'Выполняй задания и поручения прапорщика, забирай награды и расти в звании. В «Настройках» можно включить звук, уведомления и пройти это обучение ещё раз.' }
+];
+let tutorialIndex = 0;
+
+function showTutorial(force = false) {
+  if (!els.tutorial || (!force && state.tutorialSeen)) return;
+  tutorialIndex = 0;
+  state.tutorialSeen = true;
+  renderTutorialStep();
+  els.tutorial.classList.add('is-open');
+  els.tutorial.setAttribute('aria-hidden', 'false');
+  save();
+}
+
+function renderTutorialStep() {
+  const step = TUTORIAL_STEPS[tutorialIndex];
+  if (!step) return;
+  els.tutorialCount.textContent = `${tutorialIndex + 1} / ${TUTORIAL_STEPS.length}`;
+  els.tutorialEmoji.textContent = step.icon;
+  els.tutorialTitle.textContent = step.title;
+  els.tutorialText.textContent = step.text;
+  els.tutorialDots.innerHTML = TUTORIAL_STEPS.map((_, i) => `<i class="${i === tutorialIndex ? 'is-active' : ''}"></i>`).join('');
+  els.tutorialNext.textContent = tutorialIndex === TUTORIAL_STEPS.length - 1 ? 'Начать службу' : 'Далее';
+}
+
+function advanceTutorial() {
+  playSound('click');
+  tutorialIndex += 1;
+  if (tutorialIndex >= TUTORIAL_STEPS.length) {
+    closeTutorial();
+    return;
+  }
+  renderTutorialStep();
+}
+
+function closeTutorial() {
+  if (!els.tutorial) return;
+  els.tutorial.classList.remove('is-open');
+  els.tutorial.setAttribute('aria-hidden', 'true');
+  state.tutorialSeen = true;
+  save();
 }
 
 /* ---------- game data ---------- */
@@ -178,8 +322,8 @@ const ACTIONS = [
     icon: '🏃',
     title: 'Зарядка',
     desc: 'Пробежка вокруг плаца',
-    energy: 10,
-    xp: [8, 13],
+    energy: 22,
+    xp: [10, 15],
     money: [0, 0],
     morale: 2,
     hours: 1,
@@ -195,8 +339,8 @@ const ACTIONS = [
     icon: '🎖️',
     title: 'Строевая',
     desc: 'Чеканить шаг на плацу',
-    energy: 12,
-    xp: [12, 18],
+    energy: 40,
+    xp: [15, 22],
     money: [0, 0],
     morale: 1,
     hours: 2,
@@ -213,9 +357,9 @@ const ACTIONS = [
     title: 'Позвонить маме',
     desc: 'Рассказать, что всё хорошо',
     energy: 4,
-    xp: [4, 7],
+    xp: [5, 8],
     money: [0, 0],
-    morale: 14,
+    morale: 16,
     hours: 1,
     minPeriod: 0,
     flavor: [
@@ -229,9 +373,9 @@ const ACTIONS = [
     icon: '🧹',
     title: 'Наряд',
     desc: 'Развод на наряд дня',
-    energy: 14,
-    xp: [6, 10],
-    money: [45, 75],
+    energy: 60,
+    xp: [8, 13],
+    money: [45, 80],
     morale: -1,
     hours: 3,
     minPeriod: 0,
@@ -248,9 +392,9 @@ const ACTIONS = [
     icon: '🧹',
     title: 'Помочь прапорщику',
     desc: 'Подмести плац и заслужить плюс',
-    energy: 10,
-    xp: [10, 16],
-    money: [30, 90],
+    energy: 40,
+    xp: [12, 18],
+    money: [35, 75],
     morale: 3,
     hours: 2,
     minPeriod: 1,
@@ -265,9 +409,9 @@ const ACTIONS = [
     icon: '🛡️',
     title: 'Караул',
     desc: 'Четыре часа на посту, всё по уставу',
-    energy: 22,
-    xp: [24, 34],
-    money: [100, 160],
+    energy: 75,
+    xp: [26, 36],
+    money: [90, 140],
     morale: -3,
     hours: 4,
     minPeriod: 1,
@@ -282,9 +426,9 @@ const ACTIONS = [
     icon: '🧑‍🏫',
     title: 'Учить молодых',
     desc: 'Показать, как подшивать воротничок',
-    energy: 12,
-    xp: [20, 30],
-    money: [20, 40],
+    energy: 55,
+    xp: [24, 34],
+    money: [30, 60],
     morale: 4,
     hours: 3,
     minPeriod: 3,
@@ -299,9 +443,9 @@ const ACTIONS = [
     icon: '🎒',
     title: 'Дембельский аккорд',
     desc: 'Последний большой рывок перед дембелем',
-    energy: 30,
-    xp: [60, 90],
-    money: [200, 300],
+    energy: 95,
+    xp: [70, 100],
+    money: [220, 320],
     morale: 10,
     hours: 6,
     cooldownHours: 24,
@@ -330,13 +474,13 @@ const SHOP = [
     id: 'pie',
     icon: '🥟',
     name: 'Пирожок с картошкой',
-    desc: '+15 энергии и +4 духа',
-    price: 30,
+    desc: '+20 энергии и +4 духа',
+    price: 35,
     temporary: true,
     fullMsg: 'Сначала проголодайся',
     blocked: () => state.energy >= state.maxEnergy,
     apply: () => {
-      state.energy = Math.min(state.maxEnergy, state.energy + 15);
+      state.energy = Math.min(state.maxEnergy, state.energy + 20);
       state.morale = clamp(state.morale + 4, 0, 100);
     }
   },
@@ -344,89 +488,90 @@ const SHOP = [
     id: 'choco',
     icon: '🍫',
     name: 'Шоколадка «Алёнка»',
-    desc: '+14 боевого духа',
-    price: 45,
+    desc: '+15 боевого духа',
+    price: 50,
     temporary: true,
     fullMsg: 'Дух и так боевой',
     blocked: () => state.morale >= 100,
     apply: () => {
-      state.morale = clamp(state.morale + 14, 0, 100);
+      state.morale = clamp(state.morale + 15, 0, 100);
     }
   },
   {
     id: 'energy',
     icon: '⚡',
     name: 'Энергетик «Дизель»',
-    desc: '+35 энергии',
-    price: 60,
+    desc: '+40 энергии',
+    price: 65,
     temporary: true,
     fullMsg: 'Энергия и так на максимуме',
     blocked: () => state.energy >= state.maxEnergy,
     apply: () => {
-      state.energy = Math.min(state.maxEnergy, state.energy + 35);
+      state.energy = Math.min(state.maxEnergy, state.energy + 40);
     }
   },
   {
     id: 'medkit',
     icon: '💊',
     name: 'Бинт и йод',
-    desc: '+25 здоровья',
-    price: 70,
+    desc: '+30 здоровья',
+    price: 75,
     temporary: true,
     fullMsg: 'Здоровье и так в порядке',
     blocked: () => state.hp >= state.maxHp,
     apply: () => {
-      state.hp = Math.min(state.maxHp, state.hp + 25);
+      state.hp = Math.min(state.maxHp, state.hp + 30);
     }
   },
   {
     id: 'pillow',
     icon: '🛏️',
     name: 'Подушка поудобнее',
-    desc: '+10 к максимуму энергии навсегда',
-    price: 150,
+    desc: '+15 к максимуму энергии навсегда',
+    price: 400,
     max: 3,
     permanent: true,
     apply: () => {
-      state.maxEnergy += 10;
-      state.energy = Math.min(state.maxEnergy, state.energy + 10);
+      state.maxEnergy += 15;
+      state.energy = Math.min(state.maxEnergy, state.energy + 15);
     }
   },
   {
     id: 'kettle',
     icon: '🫖',
     name: 'Чайник в тумбочку',
-    desc: '+5 боевого духа каждое утро',
-    price: 220,
+    desc: '+6 боевого духа каждое утро',
+    price: 650,
     max: 2,
     permanent: true,
     apply: () => {
-      state.morale = clamp(state.morale + 5, 0, 100);
+      state.morale = clamp(state.morale + 6, 0, 100);
     }
   },
   {
     id: 'boots',
     icon: '🥾',
     name: 'Новые берцы',
-    desc: '+5 к максимуму энергии навсегда',
-    price: 300,
+    desc: '+8 к максимуму энергии навсегда',
+    price: 900,
     max: 4,
     permanent: true,
     apply: () => {
-      state.maxEnergy += 5;
-      state.energy = Math.min(state.maxEnergy, state.energy + 5);
+      state.maxEnergy += 8;
+      state.energy = Math.min(state.maxEnergy, state.energy + 8);
     }
   },
   {
     id: 'locker',
     icon: '🗄️',
     name: 'Тумбочка с замком',
-    desc: '+1 поход в чипок каждый день',
-    price: 400,
+    desc: '+15 к максимуму здоровья навсегда',
+    price: 1200,
     max: 2,
     permanent: true,
     apply: () => {
-      /* лимит походов считается в shopTripsLimit() */
+      state.maxHp += 15;
+      state.hp = Math.min(state.maxHp, state.hp + 15);
     }
   }
 ];
@@ -508,20 +653,20 @@ const DAILY_TASKS = [
   {
     id: 'hours',
     icon: '🕒',
-    title: 'Отслужить 4 часа',
+    title: 'Отслужить 5 часов',
     key: 'hours',
-    goal: 4,
+    goal: 5,
     unit: 'ч',
-    reward: { money: 80, xp: 20 }
+    reward: { money: 90, xp: 25 }
   },
   {
     id: 'earn',
     icon: '💰',
-    title: 'Заработать 250 ₽',
+    title: 'Заработать 150 ₽',
     key: 'earn',
-    goal: 250,
+    goal: 150,
     unit: '₽',
-    reward: { money: 60, morale: 8 }
+    reward: { money: 70, morale: 10 }
   },
   {
     id: 'call',
@@ -772,20 +917,23 @@ function defaultState() {
     maxHp: 100,
     morale: 75,
     cooldowns: {},
-    busy: { id: null, title: '', icon: '', until: 0 },
+    busy: { id: null, title: '', icon: '', until: 0, startedAt: 0, totalMs: 0 },
     purchases: { boots: 0, pillow: 0, kettle: 0, locker: 0 },
-    shopTrips: { date: todayKey(), used: 0 },
-    duty: { date: todayKey(), type: pick(Object.keys(DUTIES)) },
-    package: { date: todayKey(), sentAt: 0, readyAt: 0, claimed: false },
+    shop: { charges: SHOP_MAX_TRIPS, lastAt: Date.now() },
+    duty: { date: gameDayKeyFrom(Date.now(), Date.now()), type: pick(Object.keys(DUTIES)) },
+    package: { date: gameDayKeyFrom(Date.now(), Date.now()), sentAt: 0, readyAt: 0, claimed: false },
     leaveAt: 0,
-    sickbay: { date: todayKey(), used: false },
+    sickbay: { date: gameDayKeyFrom(Date.now(), Date.now()), used: false },
     streak: { count: 0, lastDate: '' },
     quest: { index: 0 },
     daily: {
-      date: todayKey(),
+      date: gameDayKeyFrom(Date.now(), Date.now()),
       progress: { hours: 0, earn: 0, call: 0 },
       done: {}
     },
+    settings: { sound: true, notify: false },
+    tutorialSeen: false,
+    timeVersion: 1,
     stats: {
       duties: 0,
       totalEarned: 0,
@@ -842,11 +990,13 @@ function loadState() {
         id: savedBusy.id || null,
         title: savedBusy.title || knownBusy?.title || (savedBusy.id ? 'Занятие' : ''),
         icon: savedBusy.icon || knownBusy?.icon || (savedBusy.id ? '⏳' : ''),
-        until: Number(savedBusy.until) || 0
+        until: Number(savedBusy.until) || 0,
+        startedAt: Number(savedBusy.startedAt) || 0,
+        totalMs: Number(savedBusy.totalMs) || 0
       },
-      shopTrips: {
-        date: saved.shopTrips?.date || base.shopTrips.date,
-        used: Math.max(0, Number(saved.shopTrips?.used) || 0)
+      shop: {
+        charges: clamp(Number(saved.shop?.charges ?? (SHOP_MAX_TRIPS - (saved.shopTrips?.used || 0))), 0, SHOP_MAX_TRIPS),
+        lastAt: Number(saved.shop?.lastAt) || Number(saved.shopTrips?.lastAt) || Date.now()
       },
       duty: {
         date: saved.duty?.date || base.duty.date,
@@ -870,6 +1020,8 @@ function loadState() {
       quest: {
         index: clamp(Number(saved.quest?.index) || 0, 0, QUESTS.length)
       },
+      settings: { ...base.settings, ...(saved.settings || {}) },
+      tutorialSeen: Boolean(saved.tutorialSeen),
       log: Array.isArray(saved.log) ? saved.log : []
     };
 
@@ -881,6 +1033,15 @@ function loadState() {
     merged.money = Math.max(0, Number(merged.money) || 0);
     merged.xp = Math.max(0, Number(merged.xp) || 0);
     merged.startedAt = Number(merged.startedAt) || Date.now();
+    if (!saved.timeVersion) {
+      const elapsed = Math.max(0, Date.now() - merged.startedAt);
+      merged.startedAt = Date.now() - elapsed / 2;
+      merged.daily.date = gameDayKeyFrom(merged.startedAt);
+      merged.duty.date = merged.daily.date;
+      merged.package.date = merged.daily.date;
+      merged.sickbay.date = merged.daily.date;
+    }
+    merged.timeVersion = 1;
     merged.lastEnergyAt = Number(merged.lastEnergyAt) || Date.now();
     merged.lastHpAt = Number(merged.lastHpAt) || Date.now();
     return merged;
@@ -930,6 +1091,8 @@ function applyOfflineRegen() {
       state.lastHpAt += gain * HP_MS;
     }
   }
+
+  refreshShopTrips(now);
 }
 
 /* ---------- derived values ---------- */
@@ -1006,11 +1169,31 @@ function daysUntilContract() {
 }
 
 function shopTripsLimit() {
-  return 1 + rankIndexFor(state.xp, state.contract) + (state.purchases?.locker || 0);
+  return SHOP_MAX_TRIPS;
 }
 
 function shopTripsLeft() {
-  return Math.max(0, shopTripsLimit() - (state.shopTrips?.used || 0));
+  refreshShopTrips();
+  return state.shop.charges;
+}
+
+function refreshShopTrips(now = Date.now()) {
+  if (!state.shop) state.shop = { charges: SHOP_MAX_TRIPS, lastAt: now };
+  if (state.shop.charges >= SHOP_MAX_TRIPS) {
+    state.shop.charges = SHOP_MAX_TRIPS;
+    state.shop.lastAt = now;
+    return false;
+  }
+  const gained = Math.floor((now - state.shop.lastAt) / SHOP_TRIP_MS);
+  if (gained <= 0) return false;
+  state.shop.charges = Math.min(SHOP_MAX_TRIPS, state.shop.charges + gained);
+  state.shop.lastAt = state.shop.charges >= SHOP_MAX_TRIPS ? now : state.shop.lastAt + gained * SHOP_TRIP_MS;
+  return true;
+}
+
+function shopTripWait() {
+  refreshShopTrips();
+  return state.shop.charges >= SHOP_MAX_TRIPS ? 0 : Math.max(0, state.shop.lastAt + SHOP_TRIP_MS - Date.now());
 }
 
 function busyAction() {
@@ -1054,6 +1237,18 @@ const els = {
   moraleVal: $('#moraleVal'),
   moraleBar: $('#moraleBar'),
   moraleHint: $('#moraleHint'),
+  statusText: $('#statusText'),
+  statusTime: $('#statusTime'),
+  statusProgress: $('#statusProgress'),
+  soundToggle: $('#soundToggle'),
+  notifyToggle: $('#notifyToggle'),
+  tutorial: $('#tutorial'),
+  tutorialCount: $('#tutorialCount'),
+  tutorialEmoji: $('#tutorialEmoji'),
+  tutorialTitle: $('#tutorialTitle'),
+  tutorialText: $('#tutorialText'),
+  tutorialDots: $('#tutorialDots'),
+  tutorialNext: $('#tutorialNext'),
   daysLeft: $('#daysLeft'),
   dutyCount: $('#dutyCount'),
   periodMeta: $('#periodMeta'),
@@ -1114,7 +1309,7 @@ function renderHero() {
 
   els.hpVal.textContent = Math.round(state.hp);
   els.hpBar.style.width = `${clamp((state.hp / state.maxHp) * 100, 0, 100)}%`;
-  els.hpHint.textContent = state.hp < 25 ? '❕ доход снижен — нужно подлечиться' : `+1 каждые ${HP_MS / 1000} сек`;
+  els.hpHint.textContent = state.hp < 25 ? '❕ доход снижен — нужно подлечиться' : `+1 каждые ${regenLabel()}`;
   els.hpHint.classList.toggle('is-alert', state.hp < 25);
 
   els.energyVal.textContent = `${Math.round(state.energy)}/${state.maxEnergy}`;
@@ -1216,7 +1411,7 @@ function assignDailyDuty() {
   const p = periodProgress();
   const current = state.duty?.type;
   const type = p.idx >= 2 && DUTIES[current] ? current : pick(keys);
-  state.duty = { date: todayKey(), type };
+  state.duty = { date: gameDayKey(), type };
 }
 
 function updateStreak() {
@@ -1240,19 +1435,15 @@ function updateStreak() {
 }
 
 function checkDailyReset(notify = true) {
-  const today = todayKey();
+  const today = gameDayKey();
   let changed = false;
 
-  if (state.package.date !== today) {
+  if (state.package.date !== today && (!state.package.sentAt || state.package.claimed)) {
     state.package = { date: today, sentAt: 0, readyAt: 0, claimed: false };
     changed = true;
   }
   if (state.sickbay.date !== today) {
     state.sickbay = { date: today, used: false };
-    changed = true;
-  }
-  if (state.shopTrips.date !== today) {
-    state.shopTrips = { date: today, used: 0 };
     changed = true;
   }
   if (state.duty.date !== today) {
@@ -1266,9 +1457,12 @@ function checkDailyReset(notify = true) {
       done: {}
     };
     const kettle = state.purchases?.kettle || 0;
-    if (kettle > 0) state.morale = clamp(state.morale + 5 * kettle, 0, 100);
+    if (kettle > 0) state.morale = clamp(state.morale + 6 * kettle, 0, 100);
     changed = true;
-    if (notify) toast('🌅 Новый день службы — задания, наряды и походы обновились', 'info');
+    if (notify) {
+      toast('🌅 Новый игровой день — задания и наряд обновились', 'info');
+      notifyPlayer('Новый игровой день', 'Задания и наряд обновились.');
+    }
   }
 
   updateStreak();
@@ -1423,6 +1617,7 @@ function claimPackage() {
   if (packageState() !== 'ready') return;
 
   state.package.claimed = true;
+  state.package.date = gameDayKey();
   state.stats.packages = (state.stats.packages || 0) + 1;
   applyReward({ energy: 25, morale: 10 });
 
@@ -1593,7 +1788,7 @@ function chooseDuty(type) {
   if (!DUTIES[type] || periodProgress().idx < 2) return;
   if (!requireFree()) return;
 
-  state.duty = { date: todayKey(), type };
+  state.duty = { date: gameDayKey(), type };
   renderDutyPicker();
   renderActions();
   save();
@@ -1679,7 +1874,39 @@ function renderAll() {
   renderStaff();
   renderShopPanel();
   updateActionStates();
+  renderStatusLine();
   renderMoney();
+  renderSettings();
+}
+
+function renderSettings() {
+  if (els.soundToggle) {
+    els.soundToggle.classList.toggle('is-on', Boolean(state.settings.sound));
+    els.soundToggle.setAttribute('aria-checked', String(Boolean(state.settings.sound)));
+  }
+  if (els.notifyToggle) {
+    els.notifyToggle.classList.toggle('is-on', Boolean(state.settings.notify));
+    els.notifyToggle.setAttribute('aria-checked', String(Boolean(state.settings.notify)));
+  }
+}
+
+function renderStatusLine() {
+  if (!els.statusText) return;
+  const now = Date.now();
+  const active = busyAction();
+  if (active) {
+    const elapsed = Math.max(0, now - (state.busy.startedAt || (state.busy.until - (state.busy.totalMs || HOUR_MS))));
+    const total = state.busy.totalMs || Math.max(HOUR_MS, state.busy.until - (state.busy.startedAt || now));
+    const remaining = Math.max(0, active.until - now);
+    els.statusText.textContent = `${active.icon} ${active.title}`;
+    els.statusTime.textContent = fmtClock(remaining);
+    els.statusProgress.style.width = `${clamp((elapsed / total) * 100, 0, 100)}%`;
+  } else {
+    const energyWait = state.energy >= state.maxEnergy ? 'готова' : fmtClock(Math.max(0, state.lastEnergyAt + ENERGY_MS - now));
+    els.statusText.textContent = 'Служба идёт · свободен';
+    els.statusTime.textContent = state.energy >= state.maxEnergy ? `⚡ ${Math.round(state.energy)}/${state.maxEnergy}` : `⚡ +1 через ${energyWait}`;
+    els.statusProgress.style.width = '0%';
+  }
 }
 
 function renderMoney() {
@@ -2080,17 +2307,19 @@ function applyRankPromotion(from, to) {
   const gained = to - from;
   state.maxEnergy += 10 * gained;
   state.energy = Math.min(state.maxEnergy, state.energy + 15 * gained);
-  state.hp = Math.min(state.maxHp, state.hp + 20 * gained);
+  state.maxHp += 5 * gained;
+  state.hp = Math.min(state.maxHp, state.hp + 10 * gained);
 
   const rank = RANKS[to];
   pushLog({
     icon: '🎖️',
     text: `Новое звание — ${rank.title}!`,
-    gains: [`+${10 * gained} ⚡ макс.`, `+${20 * gained} ❤️`, `+${gained} к лимиту походов`],
+    gains: [`+${10 * gained} ⚡ макс.`, `+${5 * gained} ❤️ макс.`],
     type: 'level'
   });
 
   openModal((el) => renderLevelSheet(el, rank, gained));
+  playSound('level');
   haptic('success');
 }
 
@@ -2109,6 +2338,9 @@ function addXp(amount) {
 
 function triggerEvent() {
   const ev = pick(EVENTS);
+  const now = Date.now();
+  if (ev.energy < 0 && state.energy >= state.maxEnergy) state.lastEnergyAt = now;
+  if (ev.hp < 0 && state.hp >= state.maxHp) state.lastHpAt = now;
   const gains = [];
   let bad = false;
 
@@ -2183,6 +2415,7 @@ function doAction(id) {
     return;
   }
 
+  if (state.energy >= state.maxEnergy) state.lastEnergyAt = now;
   state.energy -= action.energy;
 
   const mult = rewardMultiplier();
@@ -2198,6 +2431,8 @@ function doAction(id) {
     id,
     title: action.title,
     icon: action.icon,
+    startedAt: now,
+    totalMs: action.hours * HOUR_MS,
     until: now + action.hours * HOUR_MS
   };
 
@@ -2232,6 +2467,7 @@ function doAction(id) {
   renderAll();
   save();
   haptic('success');
+  playSound('success');
 
   const toastParts = [`+${xpGain} XP`];
   if (moneyGain > 0) toastParts.push(`+${fmt(moneyGain)} ₽`);
@@ -2285,8 +2521,7 @@ function renderLevelSheet(el, rank, gained) {
     ${capped ? '<p class="sheet-text">Потолок срочника — младший сержант. Подпиши контракт, чтобы расти дальше.</p>' : ''}
     <div class="sheet-rewards">
       <span class="reward-pill">+${gained * 10} ⚡ к максимуму</span>
-      <span class="reward-pill">+${gained * 20} ❤️</span>
-      <span class="reward-pill">+${gained} ${plural(gained, 'поход', 'похода', 'походов')} в чипок</span>
+      <span class="reward-pill">+${gained * 5} ❤️ к максимуму</span>
     </div>
     <button class="btn btn-primary" data-close>Служу Отечеству!</button>
   `;
@@ -2308,7 +2543,8 @@ function shopItemHtml(item, noTrips) {
   const bought = state.purchases[item.id] || 0;
   const soldOut = Boolean(item.max) && bought >= item.max;
   const poor = state.money < item.price;
-  const label = soldOut ? 'макс.' : (noTrips ? 'нет походов' : rub(item.price));
+  const blockedByTrips = !item.permanent && noTrips;
+  const label = soldOut ? 'макс.' : (blockedByTrips ? 'нет похода' : rub(item.price));
 
   return `
     <li class="shop-item ${soldOut ? 'is-sold' : ''}">
@@ -2317,7 +2553,7 @@ function shopItemHtml(item, noTrips) {
         <b>${item.name}</b>
         <span>${item.desc}</span>
       </div>
-      <button class="buy-btn ${poor && !soldOut && !noTrips ? 'is-poor' : ''}" data-buy="${item.id}" ${soldOut || noTrips ? 'disabled' : ''}>${label}</button>
+      <button class="buy-btn ${poor && !soldOut && !blockedByTrips ? 'is-poor' : ''}" data-buy="${item.id}" ${soldOut || blockedByTrips ? 'disabled' : ''}>${label}</button>
     </li>
   `;
 }
@@ -2326,23 +2562,23 @@ function renderShopPanel() {
   if (!els.shopList) return;
 
   const left = shopTripsLeft();
-  const limit = shopTripsLimit();
   const noTrips = left <= 0;
+  const wait = shopTripWait();
 
   els.shopMoney.textContent = rub(state.money);
-  els.shopTrips.innerHTML = `Походы в чипок: <b>${left}</b> из ${limit}`;
+  els.shopTrips.innerHTML = `Походы: <b>${left}</b> из ${SHOP_MAX_TRIPS}${noTrips ? ` · следующий через ${fmtDuration(wait)}` : ''}`;
   els.shopTrips.classList.toggle('is-empty', noTrips);
   els.shopNote.textContent = noTrips
-    ? 'Походы на сегодня закончились. Новые дадут за звание или завтра.'
-    : 'Один поход — одна покупка. Каждое новое звание добавляет поход, а лимит обновляется каждый день.';
+    ? 'Один поход восстановится через 30 минут. Апгрейды доступны без ограничений по походам.'
+    : 'Расходник стоит один поход. Походы постепенно восстанавливаются каждые 30 минут; апгрейды походов не требуют.';
 
   const temporary = SHOP.filter((item) => !item.permanent).sort((a, b) => a.price - b.price);
   const permanent = SHOP.filter((item) => item.permanent).sort((a, b) => a.price - b.price);
 
   els.shopList.innerHTML = `
-    <li class="shop-section"><span>Расходники</span><small>на сегодня</small></li>
+    <li class="shop-section"><span>Расходники</span><small>1 поход за покупку</small></li>
     ${temporary.map((item) => shopItemHtml(item, noTrips)).join('')}
-    <li class="shop-section"><span>Апгрейды казармы</span><small>навсегда</small></li>
+    <li class="shop-section"><span>Апгрейды казармы</span><small>всегда доступны</small></li>
     ${permanent.map((item) => shopItemHtml(item, noTrips)).join('')}
   `;
 }
@@ -2353,8 +2589,8 @@ function buyItem(id) {
 
   const bought = state.purchases[id] || 0;
 
-  if (shopTripsLeft() <= 0) {
-    toast('🛒 Походы в чипок закончились — новые дадут за звание или завтра', 'info');
+  if (!item.permanent && shopTripsLeft() <= 0) {
+    toast(`🛒 Следующий поход через ${fmtDuration(shopTripWait())}`, 'info');
     haptic('error');
     return;
   }
@@ -2377,7 +2613,10 @@ function buyItem(id) {
 
   state.money -= item.price;
   state.purchases[id] = bought + 1;
-  state.shopTrips.used = (state.shopTrips.used || 0) + 1;
+  if (!item.permanent) {
+    if (state.shop.charges >= SHOP_MAX_TRIPS) state.shop.lastAt = Date.now();
+    state.shop.charges = Math.max(0, state.shop.charges - 1);
+  }
   state.stats.buys = (state.stats.buys || 0) + 1;
   item.apply();
 
@@ -2392,7 +2631,8 @@ function buyItem(id) {
   save();
   renderAll();
 
-  toast(`${item.icon} ${item.name} — куплено · походов осталось: ${shopTripsLeft()}`, 'good');
+  toast(`${item.icon} ${item.name} — куплено${item.permanent ? ' · апгрейд' : ` · походов осталось: ${shopTripsLeft()}`}`, 'good');
+  playSound('coin');
   haptic('success');
 }
 
@@ -2440,9 +2680,17 @@ function setTab(tab) {
 /* ---------- game loop ---------- */
 
 let lastCareKey = '';
+let lastPackageState = '';
+let lastShopDisplay = '';
 
 function updateCareLive() {
   const pkg = packageState();
+  if (lastPackageState === 'onway' && pkg === 'ready') {
+    toast('📦 Посылка из дома прибыла', 'good');
+    notifyPlayer('Посылка прибыла', 'Забери посылку в разделе «Боец».');
+    playSound('success');
+  }
+  lastPackageState = pkg;
   const pkgMin = pkg === 'onway' ? Math.ceil((state.package.readyAt - Date.now()) / 60000) : 0;
   const leaveMin = state.leaveAt > Date.now() ? Math.ceil((state.leaveAt - Date.now()) / 60000) : 0;
   const hpFull = state.hp >= state.maxHp ? 1 : 0;
@@ -2466,6 +2714,9 @@ function tick() {
       gains: [],
       type: 'info'
     });
+    toast(`${icon} ${title} завершено`, 'good');
+    notifyPlayer('Занятие завершено', `${title}: можно выбрать следующее занятие.`);
+    playSound('success');
     changed = true;
   }
 
@@ -2497,6 +2748,14 @@ function tick() {
   }
 
   updateActionStates();
+  renderStatusLine();
+  const tripsChanged = refreshShopTrips(now);
+  const shopDisplay = `${state.shop.charges}:${state.shop.charges < SHOP_MAX_TRIPS ? Math.ceil(shopTripWait() / 60000) : 0}`;
+  if (tripsChanged || shopDisplay !== lastShopDisplay) {
+    lastShopDisplay = shopDisplay;
+    renderShopPanel();
+    if (tripsChanged) save();
+  }
   updateCareLive();
   checkDailyReset();
 
@@ -2541,6 +2800,7 @@ function bindEvents() {
     btn.addEventListener('click', () => {
       setTab(btn.dataset.tab);
       haptic();
+      playSound('click');
     });
   });
 
@@ -2581,10 +2841,22 @@ function bindEvents() {
     });
   }
 
-  $('#resetBtn').addEventListener('click', () => {
+  $('#settingsReset').addEventListener('click', () => {
     haptic();
     openModal(renderResetConfirm);
   });
+
+  $('#soundToggle').addEventListener('click', () => {
+    state.settings.sound = !state.settings.sound;
+    renderSettings();
+    save();
+    if (state.settings.sound) playSound('success');
+    toast(state.settings.sound ? '🔊 Звуки включены' : '🔇 Звуки выключены', 'info');
+  });
+  $('#notifyToggle').addEventListener('click', toggleNotifications);
+  $('#tutorialBtn').addEventListener('click', () => showTutorial(true));
+  $('#tutorialNext').addEventListener('click', advanceTutorial);
+  $('#tutorialSkip').addEventListener('click', closeTutorial);
 
   const contractBtn = $('#contractBtn');
   if (contractBtn) {
@@ -2674,6 +2946,7 @@ function boot() {
   renderLog();
   bindEvents();
   checkAchievements(true);
+  setTab('actions');
   save();
 
   if (daysUntilDemob() <= 0 && !state.demobSeen) {
@@ -2681,9 +2954,7 @@ function boot() {
   }
 
   window.setInterval(tick, 1000);
+  showTutorial();
 }
 
 boot();
-
-
-

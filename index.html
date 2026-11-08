@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0d0f0b" />
   <title>СРОЧНИК — армейская сага</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="styles.css?v=6" />
+  <link rel="stylesheet" href="styles.css?v=7" />
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
@@ -29,16 +29,22 @@
       <div class="topbar-status">
         <span class="rank-badge rank-mini" id="rankBadgeTop">📚 Курсант</span>
         <span class="lvl-chip" id="lvlChipTop">📚 Учебка · 1/30</span>
-        <div class="energy-inline" title="Энергия восстанавливается каждые 8 секунд">
+        <div class="energy-inline" title="Энергия восстанавливается каждые 3 минуты 36 секунд">
           <span class="energy-inline-icon" aria-hidden="true">⚡</span>
           <div class="bar"><i class="fill energy" id="energyBar"></i></div>
           <b id="energyVal">100</b>
         </div>
       </div>
+      <div class="status-line" aria-live="polite">
+        <span class="status-indicator" aria-hidden="true"></span>
+        <b id="statusText">Служба идёт · свободен</b>
+        <span id="statusTime">⚡ +1 за 3:36</span>
+        <div class="status-track"><i id="statusProgress"></i></div>
+      </div>
     </header>
 
     <main class="layout">
-      <section class="panel hero-panel is-active" data-panel="hero" aria-label="Боец">
+      <section class="panel hero-panel" data-panel="hero" aria-label="Боец">
         <article class="hero-card">
           <div class="hero-top">
             <div class="avatar" aria-hidden="true">🪖<span class="avatar-star">★</span></div>
@@ -61,7 +67,7 @@
             <div class="stat">
               <div class="row-label"><span>❤️ Здоровье</span><b id="hpVal">100</b></div>
               <div class="bar"><i class="fill hp" id="hpBar"></i></div>
-              <div class="micro" id="hpHint">+1 каждые 30 сек</div>
+              <div class="micro" id="hpHint">+1 каждые 3:36</div>
             </div>
             <div class="stat">
               <div class="row-label"><span>🔥 Боевой дух</span><b id="moraleVal">75</b></div>
@@ -83,7 +89,7 @@
         <article class="card daily-card">
           <div class="card-head">
             <h2>Задания дня</h2>
-            <span class="card-note">до полуночи</span>
+            <span class="card-note">каждые 12 часов</span>
           </div>
           <ul class="daily-list" id="dailyList"></ul>
         </article>
@@ -146,15 +152,14 @@
 
         <div class="hero-footer">
           <span class="hint-text">Прогресс сохраняется на этом устройстве</span>
-          <button class="link-btn" id="resetBtn">начать заново</button>
         </div>
       </section>
 
-      <section class="panel actions-panel" data-panel="actions" aria-label="Казарма">
+      <section class="panel actions-panel is-active" data-panel="actions" aria-label="Казарма">
         <div class="panel-head">
           <div>
             <h2>Казарма</h2>
-            <p class="panel-sub">Выбери занятие: энергия тратится, а служба идёт часами.</p>
+          <p class="panel-sub">Игровой день — 12 часов. Занятия тратят энергию и занимают время.</p>
           </div>
           <span class="live-chip"><i></i> служба идёт</span>
         </div>
@@ -176,9 +181,9 @@
             <span>💰 В кармане</span>
             <b id="shopMoney">120 ₽</b>
           </div>
-          <div class="trips" id="shopTrips">Походы в чипок: 1 из 1</div>
+          <div class="trips" id="shopTrips">Походы: 3 из 3</div>
           <ul class="shop-list" id="shopList"></ul>
-          <p class="shop-note" id="shopNote">Один поход — одна покупка. Каждое новое звание добавляет поход, а лимит обновляется каждый день.</p>
+          <p class="shop-note" id="shopNote">Поход восстанавливается за 30 минут. Апгрейды не тратят походы.</p>
         </div>
       </section>
 
@@ -192,15 +197,63 @@
           <p class="log-tip">Каждое действие может обернуться неожиданностью 😉</p>
         </article>
       </section>
+
+      <section class="panel settings-panel" data-panel="settings" aria-label="Настройки">
+        <div class="panel-head">
+          <div>
+            <h2>Настройки</h2>
+            <p class="panel-sub">Звук, уведомления и обучение</p>
+          </div>
+          <span class="live-chip">⚙️ профиль</span>
+        </div>
+        <div class="card settings-card">
+          <div class="setting-row">
+            <span class="setting-icon">🔊</span>
+            <span class="setting-copy"><b>Звуки</b><small>Клики, награды и достижения</small></span>
+            <button class="setting-toggle" id="soundToggle" role="switch" aria-checked="true" aria-label="Звуки"></button>
+          </div>
+          <div class="setting-row">
+            <span class="setting-icon">🔔</span>
+            <span class="setting-copy"><b>Уведомления</b><small>О завершении занятия и посылке</small></span>
+            <button class="setting-toggle" id="notifyToggle" role="switch" aria-checked="false" aria-label="Уведомления"></button>
+          </div>
+          <div class="setting-row">
+            <span class="setting-icon">📖</span>
+            <span class="setting-copy"><b>Обучение</b><small>Короткая памятка по игре</small></span>
+            <button class="settings-action" id="tutorialBtn">Пройти</button>
+          </div>
+          <div class="setting-row">
+            <span class="setting-icon">🔄</span>
+            <span class="setting-copy"><b>Новая служба</b><small>Удалить локальный прогресс</small></span>
+            <button class="settings-action is-danger" id="settingsReset">Сбросить</button>
+          </div>
+          <p class="settings-note">Прогресс хранится на этом устройстве.</p>
+        </div>
+      </section>
     </main>
   </div>
 
   <nav class="bottom-nav" aria-label="Навигация">
-    <button class="nav-btn is-active" data-tab="hero"><span class="nav-icon">👤</span><span>Боец</span></button>
-    <button class="nav-btn" data-tab="actions"><span class="nav-icon">🏛️</span><span>Казарма</span></button>
+    <button class="nav-btn is-active" data-tab="actions"><span class="nav-icon">🏛️</span><span>Казарма</span></button>
     <button class="nav-btn" data-tab="shop"><span class="nav-icon">🛒</span><span>Чипок</span></button>
+    <button class="nav-btn" data-tab="hero"><span class="nav-icon">👤</span><span>Боец</span></button>
     <button class="nav-btn" data-tab="log"><span class="nav-icon">📜</span><span>События</span></button>
+    <button class="nav-btn" data-tab="settings"><span class="nav-icon">⚙️</span><span>Настройки</span></button>
   </nav>
+
+  <div class="tutorial" id="tutorial" aria-hidden="true">
+    <div class="tutorial-card" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
+      <span class="tutorial-count" id="tutorialCount">1 / 4</span>
+      <div class="tutorial-emoji" id="tutorialEmoji">🏛️</div>
+      <h2 id="tutorialTitle">Казарма</h2>
+      <p id="tutorialText"></p>
+      <div class="tutorial-dots" id="tutorialDots"></div>
+      <div class="tutorial-actions">
+        <button class="btn btn-ghost" id="tutorialSkip">Пропустить</button>
+        <button class="btn btn-primary" id="tutorialNext">Далее</button>
+      </div>
+    </div>
+  </div>
 
   <div class="demob" id="demob" aria-hidden="true">
     <div class="demob-confetti" id="demobConfetti" aria-hidden="true"></div>
@@ -225,6 +278,6 @@
     <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
   </div>
 
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>
