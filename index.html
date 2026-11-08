@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0d0f0b" />
   <title>СРОЧНИК — армейская сага</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="styles.css?v=6" />
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
@@ -27,8 +27,8 @@
         </button>
       </div>
       <div class="topbar-status">
-        <span class="rank-badge rank-mini" id="rankBadgeTop">🪖 Рядовой</span>
-        <span class="lvl-chip" id="lvlChipTop">ур. 1 / 10</span>
+        <span class="rank-badge rank-mini" id="rankBadgeTop">📚 Курсант</span>
+        <span class="lvl-chip" id="lvlChipTop">📚 Учебка · 1/30</span>
         <div class="energy-inline" title="Энергия восстанавливается каждые 8 секунд">
           <span class="energy-inline-icon" aria-hidden="true">⚡</span>
           <div class="bar"><i class="fill energy" id="energyBar"></i></div>
@@ -46,8 +46,8 @@
               <div class="eyebrow">личное дело</div>
               <h1 id="heroName">Срочник</h1>
               <div class="rank-row">
-                <span class="rank-badge" id="rankBadge">🪖 Рядовой</span>
-                <span class="lvl-chip" id="lvlChip">ур. 1</span>
+                <span class="rank-badge" id="rankBadge">📚 Курсант</span>
+                <span class="lvl-chip" id="lvlChip">📚 Учебка · 1/30</span>
               </div>
             </div>
           </div>
@@ -73,6 +73,8 @@
           <div class="hero-meta">
             <div class="meta-cell"><span>До дембеля</span><b id="daysLeft">365 дней</b></div>
             <div class="meta-cell"><span>В нарядах</span><b id="dutyCount">0</b></div>
+            <div class="meta-cell"><span>Период службы</span><b id="periodMeta">📚 Учебка</b></div>
+            <div class="meta-cell"><span>Стрик входов</span><b id="streakMeta">0 дней</b></div>
           </div>
 
           <blockquote class="quote" id="quote">«Дембель неизбежен, как подъём в шесть утра.»</blockquote>
@@ -84,6 +86,23 @@
             <span class="card-note">до полуночи</span>
           </div>
           <ul class="daily-list" id="dailyList"></ul>
+        </article>
+
+        <article class="card care-card">
+          <div class="card-head">
+            <h2>Быт</h2>
+            <span class="card-note">посылка · санчасть · увольнительная</span>
+          </div>
+          <ul class="care-list" id="careList"></ul>
+        </article>
+
+        <article class="card quest-card">
+          <div class="card-head">
+            <h2>Прапорщик</h2>
+            <span class="card-note" id="questCounter">0 / 12</span>
+          </div>
+          <p class="quest-intro">Поручения выдаются по очереди. Выполнил — забери награду.</p>
+          <div class="quest-body" id="questBody"></div>
         </article>
 
         <article class="card staff-card" id="staffCard">
@@ -135,12 +154,13 @@
         <div class="panel-head">
           <div>
             <h2>Казарма</h2>
-            <p class="panel-sub">Выбери занятие: энергия тратится, опыт и деньги капают.</p>
+            <p class="panel-sub">Выбери занятие: энергия тратится, а служба идёт часами.</p>
           </div>
-          <span class="live-chip"><i></i> смена идёт</span>
+          <span class="live-chip"><i></i> служба идёт</span>
         </div>
+        <div class="duty-picker" id="dutyPicker"></div>
         <div class="action-grid" id="actionGrid"></div>
-        <p class="tip">💡 Звонок маме — лучший способ поднять боевой дух. Не пропускай.</p>
+        <p class="tip">💡 Пока идёт одно занятие, остальные недоступны. Звонок маме — лучший способ поднять боевой дух.</p>
       </section>
 
       <section class="panel shop-panel" data-panel="shop" aria-label="Чипок">
@@ -205,6 +225,6 @@
     <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
   </div>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
