@@ -17,6 +17,7 @@ const PACKAGE_DELAY_MS = 2 * HOUR_MS;
 const LEAVE_COOLDOWN_MS = 7 * DAY_MS;
 const SHOP_MAX_TRIPS = 3;
 const SHOP_TRIP_MS = 30 * 60 * 1000; // +1 поход каждые 30 минут
+const ACTIVITY_BASE_SPEED = 3; // базовое ускорение занятий в 3 раза
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -469,6 +470,23 @@ function actionFor(id) {
   return base;
 }
 
+/* Скорость занятий: базовое ускорение + апгрейды из чипка. */
+function activitySpeedBonus() {
+  const laces = state.purchases?.laces || 0;
+  const watch = state.purchases?.watch || 0;
+  const planner = state.purchases?.planner || 0;
+  return laces * 0.10 + watch * 0.15 + planner * 0.20;
+}
+
+function activitySpeed() {
+  return ACTIVITY_BASE_SPEED * (1 + activitySpeedBonus());
+}
+
+function activityDurationMs(action) {
+  const ms = action.hours * HOUR_MS / activitySpeed();
+  return Math.max(60 * 1000, Math.round(ms));
+}
+
 const SHOP = [
   {
     id: 'pie',
@@ -573,6 +591,36 @@ const SHOP = [
       state.maxHp += 15;
       state.hp = Math.min(state.maxHp, state.hp + 15);
     }
+  },
+  {
+    id: 'laces',
+    icon: '👟',
+    name: 'Шнурки-самоходы',
+    desc: '+10% к скорости занятий',
+    price: 350,
+    max: 3,
+    permanent: true,
+    apply: () => {}
+  },
+  {
+    id: 'watch',
+    icon: '⌚',
+    name: 'Командирские часы',
+    desc: '+15% к скорости занятий',
+    price: 950,
+    max: 2,
+    permanent: true,
+    apply: () => {}
+  },
+  {
+    id: 'planner',
+    icon: '📋',
+    name: 'Распорядок дня',
+    desc: '+20% к скорости занятий',
+    price: 2200,
+    max: 1,
+    permanent: true,
+    apply: () => {}
   }
 ];
 
@@ -918,7 +966,7 @@ function defaultState() {
     morale: 75,
     cooldowns: {},
     busy: { id: null, title: '', icon: '', until: 0, startedAt: 0, totalMs: 0 },
-    purchases: { boots: 0, pillow: 0, kettle: 0, locker: 0 },
+    purchases: { boots: 0, pillow: 0, kettle: 0, locker: 0, laces: 0, watch: 0, planner: 0 },
     shop: { charges: SHOP_MAX_TRIPS, lastAt: Date.now() },
     duty: { date: gameDayKeyFrom(Date.now(), Date.now()), type: pick(Object.keys(DUTIES)) },
     package: { date: gameDayKeyFrom(Date.now(), Date.now()), sentAt: 0, readyAt: 0, claimed: false },
@@ -1430,6 +1478,7 @@ const els = {
   moneyTop: $('#moneyTop'),
   shopMoney: $('#shopMoney'),
   shopTrips: $('#shopTrips'),
+  shopSpeed: $('#shopSpeed'),
   shopList: $('#shopList'),
   shopNote: $('#shopNote'),
   dailyList: $('#dailyList'),
@@ -2401,7 +2450,7 @@ function actionRewardLabel(action) {
 function actionCardHtml(action) {
   const chips = [
     `<span class="chip-cost">⚡ ${action.energy}</span>`,
-    `<span class="chip-hours">🕒 ${action.hours} ч</span>`,
+    `<span class="chip-hours">🕒 ${fmtDuration(activityDurationMs(action))}</span>`,
     `<span>+${action.xp[0]}–${action.xp[1]} XP</span>`
   ];
 
@@ -2601,13 +2650,14 @@ function doAction(id) {
   state.morale = clamp(state.morale + moraleGain, 0, 100);
   if (base.cooldownHours) state.cooldowns[id] = now + base.cooldownHours * HOUR_MS;
 
+  const durationMs = activityDurationMs(action);
   state.busy = {
     id,
     title: action.title,
     icon: action.icon,
     startedAt: now,
-    totalMs: action.hours * HOUR_MS,
-    until: now + action.hours * HOUR_MS
+    totalMs: durationMs,
+    until: now + durationMs
   };
 
   if (action.duty) state.stats.duties += 1;
@@ -2623,7 +2673,7 @@ function doAction(id) {
   dailyAdd('earn', moneyGain);
   if (id === 'call') dailyAdd('call', 1);
 
-  const gains = [`+${xpGain} XP`, `🕒 ${action.hours} ч`];
+  const gains = [`+${xpGain} XP`, `🕒 +${action.hours} ч службы`];
   if (moneyGain > 0) gains.push(`+${fmt(moneyGain)} ₽`);
   if (moraleGain) gains.push(`${moraleGain > 0 ? '+' : ''}${moraleGain} 🔥`);
 
@@ -2645,7 +2695,7 @@ function doAction(id) {
 
   const toastParts = [`+${xpGain} XP`];
   if (moneyGain > 0) toastParts.push(`+${fmt(moneyGain)} ₽`);
-  toast(`${action.icon} ${action.title}: ${toastParts.join(' · ')} · ${action.hours} ч`, 'good');
+  toast(`${action.icon} ${action.title}: ${toastParts.join(' · ')} · ${action.hours} ч службы`, 'good');
 
   if (event) openModal((el) => renderEventSheet(el, event));
   if (daysUntilDemob() <= 0 && !state.demobSeen) window.setTimeout(showDemob, 500);
@@ -2742,6 +2792,11 @@ function renderShopPanel() {
   els.shopMoney.textContent = rub(state.money);
   els.shopTrips.innerHTML = `Походы: <b>${left}</b> из ${SHOP_MAX_TRIPS}${noTrips ? ` · следующий через ${fmtDuration(wait)}` : ''}`;
   els.shopTrips.classList.toggle('is-empty', noTrips);
+  if (els.shopSpeed) {
+    const speed = activitySpeed();
+    const bonus = Math.round(activitySpeedBonus() * 100);
+    els.shopSpeed.innerHTML = `Скорость занятий: <b>×${speed.toFixed(2).replace(/\.?0+$/, '')}</b>${bonus ? ` · апгрейды +${bonus}%` : ''}`;
+  }
   els.shopNote.textContent = noTrips
     ? 'Один поход восстановится через 30 минут. Апгрейды доступны без ограничений по походам.'
     : 'Расходник стоит один поход. Походы постепенно восстанавливаются каждые 30 минут; апгрейды походов не требуют.';
@@ -2804,6 +2859,7 @@ function buyItem(id) {
   checkAchievements();
   save();
   renderAll();
+  if (item.permanent) renderActions();
 
   toast(`${item.icon} ${item.name} — куплено${item.permanent ? ' · апгрейд' : ` · походов осталось: ${shopTripsLeft()}`}`, 'good');
   playSound('coin');

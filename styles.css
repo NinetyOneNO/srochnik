@@ -1452,6 +1452,17 @@ button:focus-visible {
   color: #ff9d8f;
 }
 
+.trips.speed-line {
+  margin-top: 6px;
+  border-color: rgba(245, 201, 92, .22);
+  background: rgba(245, 201, 92, .06);
+  color: #f0d79d;
+}
+
+.trips.speed-line b {
+  color: var(--gold);
+}
+
 .shop-note {
   margin: 12px 2px 0;
   font-size: 9.5px;
