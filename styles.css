@@ -1783,6 +1783,12 @@ button:focus-visible {
   color: var(--muted);
 }
 
+#adminList { max-height: 180px; overflow-y: auto; margin: 10px 0; }
+#adminRow[hidden] { display: none; }
+.admin-player { display: block; width: 100%; text-align: left; padding: 8px; color: var(--text); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+#adminTarget, #adminData { width: 100%; padding: 10px; margin: 8px 0; color: var(--text); background: #141914; border: 1px solid var(--line); border-radius: 8px; }
+#adminData { font: 12px monospace; resize: vertical; }
+
 /* ---------- demob ---------- */
 
 .demob {

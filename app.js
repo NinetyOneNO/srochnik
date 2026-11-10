@@ -1112,6 +1112,8 @@ let cloudConflict = false;
 let cloudTimer = null;
 let cloudInitFailed = false;
 let cloudChecking = false;
+let isAdmin = false;
+let accountBanned = false;
 let cloudLeaderboard = null;
 let leaderboardLoading = false;
 let leaderboardError = false;
@@ -1132,6 +1134,18 @@ function expireSession() {
   document.body.appendChild(overlay);
   document.getElementById('sessionRestart').addEventListener('click', () => location.reload());
   cloudStatus('Сессия завершена: вход с другого устройства');
+}
+
+function showBanned() {
+  if (accountBanned) return;
+  accountBanned = true;
+  cloudReady = false;
+  clearTimeout(cloudTimer);
+  clearTimeout(saveTimer);
+  const overlay = document.createElement('div');
+  overlay.className = 'session-expired';
+  overlay.innerHTML = '<div><h2>Доступ заблокирован</h2><p>Обратитесь к администратору игры.</p></div>';
+  document.body.appendChild(overlay);
 }
 
 function adoptCloud(result, notify = false) {
@@ -1165,7 +1179,7 @@ async function refreshCloud() {
       adoptCloud(result, true);
     }
   } catch {
-    if (sessionExpired) return;
+    if (sessionExpired || accountBanned) return;
     cloudStatus('Нет связи с облаком. Прогресс сохранён на устройстве.');
   } finally { cloudChecking = false; }
 }
@@ -1182,6 +1196,7 @@ async function cloudRequest(mode, data, revision) {
     signal: AbortSignal.timeout(15000)
   });
   const result = await response.json();
+  if (result.banned) { showBanned(); throw new Error('banned'); }
   if (result.session_expired) { expireSession(); throw new Error('session expired'); }
   if (response.status === 409) return { conflict: true };
   if (!response.ok) throw new Error('cloud request failed');
@@ -1244,7 +1259,7 @@ async function flushCloudSave() {
       cloudStatus('Прогресс сохранён в аккаунте Telegram');
     }
   } catch {
-    if (sessionExpired) return;
+    if (sessionExpired || accountBanned) return;
     cloudPending = true;
     setCloudMeta({ ...cloudMeta(), dirty: true });
     cloudStatus('Не удалось сохранить в облаке. Прогресс на устройстве; перезапустите игру для сверки.');
@@ -1266,6 +1281,8 @@ async function initializeCloud() {
   try {
     cloudStatus('Загрузка сохранения аккаунта…');
     const result = await cloudRequest('login');
+    isAdmin = result.is_admin === true;
+    $('#adminRow').hidden = !isAdmin;
     if (result.exists) {
       const useLocal = Boolean(localRaw && localMeta.user === user && localMeta.dirty && localMeta.revision === result.revision);
       if (localRaw && !useLocal && (!localMeta.user || localMeta.revision !== result.revision)) {
@@ -1287,7 +1304,7 @@ async function initializeCloud() {
     setCloudMeta({ user, revision: cloudRevision, dirty: cloudPending });
     cloudStatus('Аккаунт Telegram подключён');
   } catch {
-    if (sessionExpired) return;
+    if (sessionExpired || accountBanned) return;
     cloudInitFailed = true;
     cloudReady = false;
     if (localMeta.user === user) setCloudMeta({ ...localMeta, dirty: true });
@@ -1301,7 +1318,7 @@ function save() {
 }
 
 function saveNow() {
-  if (isResetting || sessionExpired) return;
+  if (isResetting || sessionExpired || accountBanned) return;
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
     if ((cloudInitFailed || (!cloudReady && cloudMeta().user)) && tg?.initDataUnsafe?.user?.id) {
@@ -2230,7 +2247,7 @@ function myLeaderboardPlace() {
 function renderStaff() {
   if (!els.staffPosition) return;
 
-  if (state.contract && cloudReady && !cloudLeaderboard && !leaderboardLoading && !leaderboardError) {
+  if (cloudReady && !cloudLeaderboard && !leaderboardLoading && !leaderboardError) {
     refreshLeaderboard();
   }
 
@@ -2238,11 +2255,11 @@ function renderStaff() {
   const unlocked = ACHIEVEMENTS.filter((a) => state.achievements[a.id]).length;
   const ready = contractAvailable();
 
-  els.staffPosition.textContent = state.contract
-    ? (placeInfo.place ? `Ты на ${placeInfo.place} месте из ${placeInfo.total}` : 'Ты пока вне рейтинга')
-    : '🔒 доступ после контракта';
+  els.staffPosition.textContent = !cloudLeaderboard && tg?.initData
+    ? (leaderboardError ? 'Рейтинг недоступен' : 'Загрузка рейтинга…')
+    : placeInfo.place ? `Ты на ${placeInfo.place} месте из ${placeInfo.total}` : 'Ты пока вне рейтинга';
   els.staffAch.textContent = `Открыто ${unlocked} из ${ACHIEVEMENTS.length}`;
-  els.leaderboardBtn.disabled = !state.contract;
+  els.leaderboardBtn.disabled = false;
 
   if (els.contractBtn) {
     els.contractBtn.hidden = Boolean(state.contract);
@@ -2250,7 +2267,7 @@ function renderStaff() {
     els.contractBtn.classList.toggle('is-ready', ready);
     els.contractTitle.textContent = ready ? 'Подписать контракт' : 'Контракт';
     if (ready) {
-      els.contractNote.textContent = 'Половина службы позади · откроет рейтинг роты';
+      els.contractNote.textContent = 'Половина службы позади · откроет новые звания';
     } else if (daysServed() < CONTRACT_DAY) {
       els.contractNote.textContent = `После половины службы · осталось ${daysUntilContract()} ${plural(daysUntilContract(), 'день', 'дня', 'дней')}`;
     } else {
@@ -2281,7 +2298,7 @@ function signContract() {
 
   pushLog({
     icon: '📄',
-    text: 'Контракт подписан. Теперь доступен рейтинг роты и звания до старшего сержанта.',
+    text: 'Контракт подписан. Теперь доступны звания до старшего сержанта.',
     gains: [],
     type: 'level'
   });
@@ -2292,7 +2309,7 @@ function signContract() {
   renderStaff();
   renderHero();
   save();
-  toast('📄 Контракт подписан! Рейтинг роты открыт', 'good');
+  toast('📄 Контракт подписан! Открыты новые звания', 'good');
   haptic('success');
 }
 
@@ -2407,7 +2424,7 @@ function renderLeaderboard(el) {
     <div class="sheet-handle"></div>
     <div class="sheet-head">
       <div>
-        <h3 class="sheet-title">${cloud ? 'Общий рейтинг' : 'Рейтинг роты'}</h3>
+        <h3 class="sheet-title">Рейтинг</h3>
         <p class="sheet-sub">${cloud ? 'Игроки Telegram по опыту' : 'Кто дальше всех ушёл по службе'}</p>
       </div>
       <div class="sheet-head-actions">
@@ -2859,6 +2876,69 @@ function renderEventSheet(el, result) {
   `;
 }
 
+async function adminRequest(action, target, data, revision) {
+  const response = await fetch(CLOUD_URL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ initData: tg.initData, sessionId: cloudSessionId, mode: 'admin', action, target, data, revision }),
+    signal: AbortSignal.timeout(15000)
+  });
+  const result = await response.json();
+  if (result.session_expired) { expireSession(); throw new Error('Сессия завершена'); }
+  if (result.conflict) throw new Error('Сохранение изменилось. Загрузите игрока заново.');
+  if (!response.ok) throw new Error('Операция отклонена сервером');
+  return result;
+}
+
+function renderAdmin(el) {
+  el.innerHTML = `<h3 class="sheet-title">Управление игроками</h3>
+    <p class="sheet-text">Последние 100 игроков. Для точного поиска введите Telegram ID.</p>
+    <div id="adminList">Загрузка…</div>
+    <label>Telegram ID <input id="adminTarget" inputmode="numeric" placeholder="Telegram ID"></label>
+    <button class="btn btn-ghost" id="adminLoad">Загрузить игрока</button>
+    <div id="adminEditor"></div><button class="btn btn-ghost" data-close>Закрыть</button>`;
+  const list = $('#adminList', el);
+  const target = $('#adminTarget', el);
+  const editor = $('#adminEditor', el);
+  adminRequest('list').then(result => {
+    if (!el.isConnected) return;
+    list.innerHTML = result.players.map(p => `<button class="admin-player" data-id="${escapeHtml(p.telegram_id)}">${escapeHtml(p.name)} · ${escapeHtml(p.telegram_id)}${p.banned ? ' · заблокирован' : ''}</button>`).join('') || 'Игроков пока нет';
+  }).catch(() => { list.textContent = 'Не удалось загрузить список'; });
+  list.addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) { target.value = b.dataset.id; $('#adminLoad', el).click(); } });
+  $('#adminLoad', el).addEventListener('click', async () => {
+    const id = target.value.trim();
+    if (!/^\d{1,20}$/.test(id)) { toast('Введите Telegram ID', 'bad'); return; }
+    try {
+      const player = await adminRequest('get', id);
+      editor.innerHTML = `<p class="sheet-text">ID: ${escapeHtml(id)} · ревизия ${player.revision}${player.banned ? ' · заблокирован' : ''}</p>
+        <p class="sheet-text">Полное сохранение JSON. Ошибки могут повредить прогресс.</p>
+        <textarea id="adminData" rows="12" spellcheck="false"></textarea>
+        <button class="btn btn-primary" id="adminSave">Сохранить изменения</button>
+        <button class="btn btn-ghost" id="adminBan">${player.banned ? 'Разблокировать' : 'Заблокировать'}</button>
+        <button class="btn btn-danger" id="adminReset">Сбросить прогресс</button>`;
+      $('#adminData', editor).value = JSON.stringify(player.data, null, 2);
+      $('#adminSave', editor).onclick = async () => {
+        let data;
+        try { data = JSON.parse($('#adminData', editor).value); } catch { toast('Некорректный JSON', 'bad'); return; }
+        if (!confirm(`Перезаписать сохранение игрока ${id}?`)) return;
+        try { await adminRequest('save', id, data, player.revision); toast('Сохранение обновлено', 'good'); $('#adminLoad', el).click(); }
+        catch (err) { toast(err.message, 'bad'); }
+      };
+      $('#adminBan', editor).onclick = async () => {
+        if (!confirm(`${player.banned ? 'Разблокировать' : 'Заблокировать'} игрока ${id}?`)) return;
+        try { await adminRequest(player.banned ? 'unban' : 'ban', id); toast('Статус обновлён', 'good'); $('#adminLoad', el).click(); }
+        catch (err) { toast(err.message, 'bad'); }
+      };
+      $('#adminReset', editor).onclick = async () => {
+        if (!confirm(`Сбросить прогресс игрока ${id}? Предыдущая версия будет сохранена в журнале.`)) return;
+        const fresh = defaultState();
+        fresh.name = player.data.name || 'Срочник';
+        try { await adminRequest('save', id, fresh, player.revision); toast('Прогресс сброшен', 'good'); $('#adminLoad', el).click(); }
+        catch (err) { toast(err.message, 'bad'); }
+      };
+    } catch (err) { toast(err.message, 'bad'); }
+  });
+}
+
 function shopItemHtml(item, noTrips) {
   const bought = state.purchases[item.id] || 0;
   const soldOut = Boolean(item.max) && bought >= item.max;
@@ -3214,6 +3294,7 @@ function bindEvents() {
   });
   $('#tutorialBtn').addEventListener('click', () => showTutorial(true));
   $('#tutorialNext').addEventListener('click', advanceTutorial);
+  $('#adminBtn').addEventListener('click', () => { if (isAdmin && cloudReady) openModal(renderAdmin); });
   $('#tutorialSkip').addEventListener('click', closeTutorial);
 
   const contractBtn = $('#contractBtn');
@@ -3225,10 +3306,6 @@ function bindEvents() {
   if (leaderboardBtn) {
     leaderboardBtn.addEventListener('click', async () => {
       haptic();
-      if (!state.contract) {
-        toast('🔒 Рейтинг откроется после подписания контракта', 'info');
-        return;
-      }
       openModal(renderLeaderboard);
       if (tg?.initData && cloudReady) {
         const ok = await refreshLeaderboard(true);
@@ -3327,7 +3404,7 @@ async function boot() {
 
   window.setInterval(tick, 1000);
   window.setInterval(() => { if (!document.hidden) refreshCloud(); }, 15000);
-  window.setInterval(() => { if (!document.hidden && state.contract && cloudReady) refreshLeaderboard(); }, 60000);
+  window.setInterval(() => { if (!document.hidden && cloudReady) refreshLeaderboard(); }, 60000);
   showTutorial();
 }
 

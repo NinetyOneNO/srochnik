@@ -43,21 +43,24 @@ Deno.serve(async (req) => {
     const body = JSON.parse(text);
     const id = await verifiedUser(body.initData);
     if (!id) return reply({ error: 'invalid telegram session' }, 401);
-    if (!['login', 'load', 'save', 'leaderboard'].includes(body.mode)) return reply({ error: 'mode' }, 400);
+    if (!['login', 'load', 'save', 'leaderboard', 'admin'].includes(body.mode)) return reply({ error: 'mode' }, 400);
     if (body.mode !== 'leaderboard' && (typeof body.sessionId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.sessionId))) return reply({ error: 'session' }, 400);
     if (body.mode === 'save' && (!Number.isSafeInteger(body.revision) || body.revision < 0 || !body.data || typeof body.data !== 'object' || Array.isArray(body.data))) return reply({ error: 'invalid save' }, 400);
     const url = Deno.env.get('SUPABASE_URL');
     const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!url || !key) throw new Error('server configuration');
     const leaderboard = body.mode === 'leaderboard';
-    const response = await fetch(`${url}/rest/v1/rpc/${leaderboard ? 'srochnik_leaderboard' : 'srochnik_session_save'}`, {
+    const admin = body.mode === 'admin';
+    if (admin && !['list', 'get', 'save', 'ban', 'unban'].includes(body.action)) return reply({ error: 'action' }, 400);
+    const response = await fetch(`${url}/rest/v1/rpc/${leaderboard ? 'srochnik_leaderboard' : admin ? 'srochnik_admin' : 'srochnik_session_save'}`, {
       method: 'POST', headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(leaderboard
         ? { p_telegram_id: id, p_limit: 50 }
+        : admin ? { p_actor: id, p_session: body.sessionId, p_action: body.action, p_target: body.target || null, p_data: body.data ?? null, p_revision: body.revision ?? null }
         : { p_telegram_id: id, p_session_id: body.sessionId, p_mode: body.mode, p_data: body.mode === 'save' ? body.data : null, p_revision: body.mode === 'save' ? body.revision : null }),
     });
     if (!response.ok) throw new Error('database error');
     const result = await response.json();
-    return reply(result, result.session_expired ? 403 : result.conflict ? 409 : 200);
+    return reply(result, result.session_expired || result.forbidden || (!admin && result.banned) ? 403 : result.conflict ? 409 : result.invalid ? 400 : result.not_found ? 404 : 200);
   } catch { return reply({ error: 'server error' }, 500); }
 });
