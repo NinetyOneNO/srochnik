@@ -1786,7 +1786,15 @@ button:focus-visible {
 #adminList { max-height: 180px; overflow-y: auto; margin: 10px 0; }
 #adminRow[hidden] { display: none; }
 .admin-player { display: block; width: 100%; text-align: left; padding: 8px; color: var(--text); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
-#adminTarget, #adminData { width: 100%; padding: 10px; margin: 8px 0; color: var(--text); background: #141914; border: 1px solid var(--line); border-radius: 8px; }
+.admin-player b, .admin-player span { display: block; }
+.admin-player span { color: var(--muted); font-size: 11px; margin-top: 3px; }
+.admin-title { margin: 18px 0 4px; }
+.admin-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.admin-grid label, .admin-label { color: var(--muted); font-size: 12px; }
+.admin-grid input, #adminSearch, #adminTarget, #adminData { width: 100%; padding: 10px; margin: 6px 0; color: var(--text); background: #141914; border: 1px solid var(--line); border-radius: 8px; }
+.admin-check { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+.admin-advanced { margin: 14px 0; color: var(--muted); }
+.admin-advanced summary { cursor: pointer; }
 #adminData { font: 12px monospace; resize: vertical; }
 
 /* ---------- demob ---------- */

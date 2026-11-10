@@ -2891,17 +2891,26 @@ async function adminRequest(action, target, data, revision) {
 
 function renderAdmin(el) {
   el.innerHTML = `<h3 class="sheet-title">Управление игроками</h3>
-    <p class="sheet-text">Последние 100 игроков. Для точного поиска введите Telegram ID.</p>
+    <p class="sheet-text">Поиск по последним 100 игрокам или точный поиск по Telegram ID.</p>
+    <label class="admin-label">Поиск <input id="adminSearch" placeholder="Имя или Telegram ID" autocomplete="off"></label>
     <div id="adminList">Загрузка…</div>
-    <label>Telegram ID <input id="adminTarget" inputmode="numeric" placeholder="Telegram ID"></label>
+    <label class="admin-label">Telegram ID <input id="adminTarget" inputmode="numeric" placeholder="Telegram ID"></label>
     <button class="btn btn-ghost" id="adminLoad">Загрузить игрока</button>
     <div id="adminEditor"></div><button class="btn btn-ghost" data-close>Закрыть</button>`;
   const list = $('#adminList', el);
   const target = $('#adminTarget', el);
   const editor = $('#adminEditor', el);
+  let players = [];
+  function showPlayers() {
+    const query = $('#adminSearch', el).value.trim().toLocaleLowerCase();
+    const matches = players.filter(p => `${p.name} ${p.telegram_id}`.toLocaleLowerCase().includes(query));
+    list.innerHTML = matches.map(p => `<button class="admin-player" data-id="${escapeHtml(p.telegram_id)}"><b>${escapeHtml(p.name)}</b><span>${escapeHtml(p.telegram_id)} · ${fmt(p.xp)} XP${p.banned ? ' · заблокирован' : ''}</span></button>`).join('') || 'Игроки не найдены';
+  }
+  $('#adminSearch', el).addEventListener('input', showPlayers);
   adminRequest('list').then(result => {
     if (!el.isConnected) return;
-    list.innerHTML = result.players.map(p => `<button class="admin-player" data-id="${escapeHtml(p.telegram_id)}">${escapeHtml(p.name)} · ${escapeHtml(p.telegram_id)}${p.banned ? ' · заблокирован' : ''}</button>`).join('') || 'Игроков пока нет';
+    players = result.players;
+    showPlayers();
   }).catch(() => { list.textContent = 'Не удалось загрузить список'; });
   list.addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) { target.value = b.dataset.id; $('#adminLoad', el).click(); } });
   $('#adminLoad', el).addEventListener('click', async () => {
@@ -2909,19 +2918,48 @@ function renderAdmin(el) {
     if (!/^\d{1,20}$/.test(id)) { toast('Введите Telegram ID', 'bad'); return; }
     try {
       const player = await adminRequest('get', id);
-      editor.innerHTML = `<p class="sheet-text">ID: ${escapeHtml(id)} · ревизия ${player.revision}${player.banned ? ' · заблокирован' : ''}</p>
-        <p class="sheet-text">Полное сохранение JSON. Ошибки могут повредить прогресс.</p>
-        <textarea id="adminData" rows="12" spellcheck="false"></textarea>
+      editor.innerHTML = `<h3 class="admin-title">Редактирование игрока</h3>
+        <p class="sheet-text">ID: ${escapeHtml(id)} · ревизия ${player.revision}${player.banned ? ' · заблокирован' : ''}</p>
+        <div class="admin-grid">
+          <label>Имя <input id="adminName" maxlength="64"></label>
+          <label>Опыт (XP) <input id="adminXp" type="number" min="0" max="1000000" step="1"></label>
+          <label>Деньги (₽) <input id="adminMoney" type="number" min="0" max="1000000000" step="1"></label>
+          <label>Энергия <input id="adminEnergy" type="number" min="0" max="500" step="1"></label>
+          <label>Максимум энергии <input id="adminMaxEnergy" type="number" min="100" max="500" step="1"></label>
+          <label>Здоровье <input id="adminHp" type="number" min="0" max="300" step="1"></label>
+          <label>Максимум здоровья <input id="adminMaxHp" type="number" min="100" max="300" step="1"></label>
+          <label>Боевой дух <input id="adminMorale" type="number" min="0" max="100" step="1"></label>
+        </div>
+        <label class="admin-check"><input id="adminContract" type="checkbox"> Контракт подписан</label>
         <button class="btn btn-primary" id="adminSave">Сохранить изменения</button>
+        <details class="admin-advanced"><summary>Полное сохранение (JSON)</summary><p class="sheet-text">Для опытных пользователей: ошибки могут повредить прогресс. Сохраняется отдельно от полей выше.</p><textarea id="adminData" rows="12" spellcheck="false"></textarea><button class="btn btn-ghost" id="adminSaveJson">Сохранить JSON</button></details>
         <button class="btn btn-ghost" id="adminBan">${player.banned ? 'Разблокировать' : 'Заблокировать'}</button>
         <button class="btn btn-danger" id="adminReset">Сбросить прогресс</button>`;
+      const fields = { Name: 'name', Xp: 'xp', Money: 'money', Energy: 'energy', MaxEnergy: 'maxEnergy', Hp: 'hp', MaxHp: 'maxHp', Morale: 'morale' };
+      for (const [suffix, key] of Object.entries(fields)) $(`#admin${suffix}`, editor).value = player.data[key] ?? (key === 'maxEnergy' || key === 'maxHp' ? 100 : key === 'name' ? '' : 0);
+      $('#adminContract', editor).checked = Boolean(player.data.contract);
       $('#adminData', editor).value = JSON.stringify(player.data, null, 2);
-      $('#adminSave', editor).onclick = async () => {
-        let data;
-        try { data = JSON.parse($('#adminData', editor).value); } catch { toast('Некорректный JSON', 'bad'); return; }
-        if (!confirm(`Перезаписать сохранение игрока ${id}?`)) return;
+      const submit = async (data) => {
+        if (!confirm(`Сохранить изменения игрока ${id}?`)) return;
         try { await adminRequest('save', id, data, player.revision); toast('Сохранение обновлено', 'good'); $('#adminLoad', el).click(); }
         catch (err) { toast(err.message, 'bad'); }
+      };
+      $('#adminSave', editor).onclick = () => {
+        const data = { ...player.data };
+        for (const [suffix, key] of Object.entries(fields)) {
+          const input = $(`#admin${suffix}`, editor);
+          if (key === 'name') { data.name = input.value.trim(); if (!data.name) { toast('Введите имя', 'bad'); return; } }
+          else { if (!input.value.trim() || !input.checkValidity() || !Number.isSafeInteger(Number(input.value))) { toast('Проверьте значения полей', 'bad'); return; } data[key] = Number(input.value); }
+        }
+        if (data.energy > data.maxEnergy || data.hp > data.maxHp) { toast('Значение не может превышать максимум', 'bad'); return; }
+        data.contract = $('#adminContract', editor).checked;
+        submit(data);
+      };
+      $('#adminSaveJson', editor).onclick = () => {
+        let data;
+        try { data = JSON.parse($('#adminData', editor).value); } catch { toast('Некорректный JSON', 'bad'); return; }
+        if (!data || typeof data !== 'object' || Array.isArray(data)) { toast('JSON должен содержать объект', 'bad'); return; }
+        submit(data);
       };
       $('#adminBan', editor).onclick = async () => {
         if (!confirm(`${player.banned ? 'Разблокировать' : 'Заблокировать'} игрока ${id}?`)) return;
