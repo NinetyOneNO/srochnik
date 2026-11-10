@@ -1112,6 +1112,9 @@ let cloudConflict = false;
 let cloudTimer = null;
 let cloudInitFailed = false;
 let cloudChecking = false;
+let cloudLeaderboard = null;
+let leaderboardLoading = false;
+let leaderboardError = false;
 const cloudSessionId = crypto.randomUUID();
 let sessionExpired = false;
 
@@ -1139,6 +1142,8 @@ function adoptCloud(result, notify = false) {
   cloudRevision = result.revision;
   cloudPending = false;
   cloudConflict = false;
+  cloudLeaderboard = null;
+  leaderboardError = false;
   setCloudMeta({ user: String(tg.initDataUnsafe.user.id), revision: cloudRevision, dirty: false });
   localStorage.setItem(SAVE_KEY, JSON.stringify(state));
   applyOfflineRegen();
@@ -1185,6 +1190,27 @@ async function cloudRequest(mode, data, revision) {
 
 function cloudMeta() {
   try { return JSON.parse(localStorage.getItem(CLOUD_META_KEY) || '{}'); } catch { return {}; }
+}
+
+async function refreshLeaderboard(force = false) {
+  if (!tg?.initData || !cloudReady || leaderboardLoading) return false;
+  if (leaderboardError && !force) return false;
+  leaderboardLoading = true;
+  leaderboardError = false;
+  try {
+    const result = await cloudRequest('leaderboard');
+    if (result && Array.isArray(result.players)) {
+      cloudLeaderboard = result;
+      renderStaff();
+      return true;
+    }
+    leaderboardError = true;
+  } catch {
+    leaderboardError = true;
+  } finally {
+    leaderboardLoading = false;
+  }
+  return false;
 }
 
 function setCloudMeta(meta) {
@@ -2144,7 +2170,26 @@ function botScore(bot) {
   return Math.max(0, bot.xp + jitter);
 }
 
+function cloudEntry(entry) {
+  const xp = Number(entry.xp) || 0;
+  const contract = Boolean(entry.contract);
+  const rank = RANKS[rankIndexFor(xp, contract)];
+  return {
+    name: entry.name || 'Срочник',
+    emoji: rank.emoji,
+    xp,
+    rankTitle: rank.title,
+    isPlayer: Boolean(entry.isMe),
+    serviceDays: Number(entry.serviceDays) || 0,
+    place: Number(entry.place) || 0
+  };
+}
+
 function leaderboardEntries() {
+  if (cloudLeaderboard) {
+    return (cloudLeaderboard.players || []).map(cloudEntry);
+  }
+
   const bots = BOTS.map((bot) => {
     const xp = botScore(bot);
     return {
@@ -2168,16 +2213,33 @@ function leaderboardEntries() {
   return [...bots, player].sort((a, b) => b.xp - a.xp || (a.isPlayer ? -1 : 1));
 }
 
+function myLeaderboardPlace() {
+  if (cloudLeaderboard?.me) {
+    return {
+      place: Number(cloudLeaderboard.me.place) || 0,
+      total: Number(cloudLeaderboard.total) || 0
+    };
+  }
+  const entries = leaderboardEntries();
+  return {
+    place: entries.findIndex((entry) => entry.isPlayer) + 1,
+    total: entries.length
+  };
+}
+
 function renderStaff() {
   if (!els.staffPosition) return;
 
-  const entries = leaderboardEntries();
-  const place = entries.findIndex((entry) => entry.isPlayer) + 1;
+  if (state.contract && cloudReady && !cloudLeaderboard && !leaderboardLoading && !leaderboardError) {
+    refreshLeaderboard();
+  }
+
+  const placeInfo = myLeaderboardPlace();
   const unlocked = ACHIEVEMENTS.filter((a) => state.achievements[a.id]).length;
   const ready = contractAvailable();
 
   els.staffPosition.textContent = state.contract
-    ? `Ты на ${place} месте из ${entries.length}`
+    ? (placeInfo.place ? `Ты на ${placeInfo.place} месте из ${placeInfo.total}` : 'Ты пока вне рейтинга')
     : '🔒 доступ после контракта';
   els.staffAch.textContent = `Открыто ${unlocked} из ${ACHIEVEMENTS.length}`;
   els.leaderboardBtn.disabled = !state.contract;
@@ -2306,10 +2368,19 @@ function checkAchievements(silent = false) {
 
 function renderLeaderboard(el) {
   const entries = leaderboardEntries();
+  const cloud = Boolean(cloudLeaderboard);
+  let rowsEntries = entries;
 
-  const rows = entries.map((entry, index) => {
-    const place = index + 1;
+  if (cloud && cloudLeaderboard.me && !entries.some((entry) => entry.isPlayer)) {
+    rowsEntries = [...entries, cloudEntry({ ...cloudLeaderboard.me, isMe: true })];
+  }
+
+  const rows = rowsEntries.map((entry, index) => {
+    const place = entry.place || index + 1;
     const medal = place === 1 ? '🥇' : place === 2 ? '🥈' : place === 3 ? '🥉' : place;
+    const details = cloud
+      ? `${entry.rankTitle} · ${entry.serviceDays} ${plural(entry.serviceDays, 'день', 'дня', 'дней')} службы`
+      : entry.rankTitle;
 
     return `
       <li class="lb-row ${entry.isPlayer ? 'is-me' : ''}">
@@ -2317,26 +2388,51 @@ function renderLeaderboard(el) {
         <span class="lb-avatar" aria-hidden="true">${entry.emoji}</span>
         <span class="lb-info">
           <b>${escapeHtml(entry.name)}${entry.isPlayer ? ' · это ты' : ''}</b>
-          <span>${entry.rankTitle}</span>
+          <span>${details}</span>
         </span>
         <span class="lb-xp">${fmt(entry.xp)} XP</span>
       </li>
     `;
   }).join('');
 
+  const note = cloud
+    ? `Всего игроков: ${fmt(cloudLeaderboard.total)}. Рейтинг обновляется при сохранении прогресса.`
+    : (tg?.initData && cloudReady
+      ? (leaderboardError ? 'Не удалось загрузить общий рейтинг. Показан учебный список.' : 'Загружаем общий рейтинг… Показан учебный список.')
+      : 'Локальный учебный рейтинг. Откройте игру в Telegram, чтобы увидеть реальных игроков.');
+
+  const canRefresh = Boolean(tg?.initData && cloudReady);
+
   el.innerHTML = `
     <div class="sheet-handle"></div>
     <div class="sheet-head">
       <div>
-        <h3 class="sheet-title">Рейтинг роты</h3>
-        <p class="sheet-sub">Кто дальше всех ушёл по службе</p>
+        <h3 class="sheet-title">${cloud ? 'Общий рейтинг' : 'Рейтинг роты'}</h3>
+        <p class="sheet-sub">${cloud ? 'Игроки Telegram по опыту' : 'Кто дальше всех ушёл по службе'}</p>
       </div>
-      <button class="icon-btn" data-close aria-label="Закрыть">✕</button>
+      <div class="sheet-head-actions">
+        ${canRefresh ? '<button class="icon-btn" id="lbRefresh" aria-label="Обновить рейтинг">↻</button>' : ''}
+        <button class="icon-btn" data-close aria-label="Закрыть">✕</button>
+      </div>
     </div>
-    <ul class="lb-list">${rows}</ul>
-    <p class="lb-note">Соперники — учебные боты, их очки немного меняются каждый день. Настоящий общий рейтинг появится, когда подключим бэкенд.</p>
+    <ul class="lb-list">${rows || '<li class="lb-empty">Пока в рейтинге никого нет</li>'}</ul>
+    <p class="lb-note">${note}</p>
     <button class="btn btn-ghost" data-close>Закрыть</button>
   `;
+
+  const refreshBtn = $('#lbRefresh', el);
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      refreshBtn.disabled = true;
+      const ok = await refreshLeaderboard(true);
+      if (ok) {
+        renderLeaderboard(el);
+      } else {
+        refreshBtn.disabled = false;
+        toast('Не удалось обновить рейтинг. Проверьте связь.', 'info');
+      }
+    });
+  }
 }
 
 function renderAchievements(el) {
@@ -3127,13 +3223,17 @@ function bindEvents() {
 
   const leaderboardBtn = $('#leaderboardBtn');
   if (leaderboardBtn) {
-    leaderboardBtn.addEventListener('click', () => {
+    leaderboardBtn.addEventListener('click', async () => {
       haptic();
       if (!state.contract) {
         toast('🔒 Рейтинг откроется после подписания контракта', 'info');
         return;
       }
       openModal(renderLeaderboard);
+      if (tg?.initData && cloudReady) {
+        const ok = await refreshLeaderboard(true);
+        if (ok && modalOpen && els.sheet.querySelector('.lb-list')) renderLeaderboard(els.sheet);
+      }
     });
   }
 
@@ -3227,6 +3327,7 @@ async function boot() {
 
   window.setInterval(tick, 1000);
   window.setInterval(() => { if (!document.hidden) refreshCloud(); }, 15000);
+  window.setInterval(() => { if (!document.hidden && state.contract && cloudReady) refreshLeaderboard(); }, 60000);
   showTutorial();
 }
 

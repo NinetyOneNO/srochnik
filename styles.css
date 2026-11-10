@@ -1188,6 +1188,12 @@ button:focus-visible {
   margin: 0;
 }
 
+.sheet-head-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
 .sheet-emoji {
   width: 62px;
   height: 62px;
@@ -1765,6 +1771,15 @@ button:focus-visible {
   border-top: 1px dashed rgba(255, 255, 255, .07);
   font-size: 9px;
   line-height: 1.45;
+  color: var(--muted);
+}
+
+.lb-empty {
+  padding: 16px 10px;
+  border: 1px dashed rgba(255, 255, 255, .1);
+  border-radius: 12px;
+  text-align: center;
+  font-size: 10px;
   color: var(--muted);
 }
 
