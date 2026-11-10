@@ -44,6 +44,7 @@ begin
     updated_at = now();
   return new;
 end $$;
+revoke all on function srochnik_private.sync_player() from public, anon, authenticated;
 
 drop trigger if exists sync_player_after_save on srochnik_private.saves;
 create trigger sync_player_after_save
