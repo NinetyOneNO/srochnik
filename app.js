@@ -3,8 +3,9 @@
 
 'use strict';
 
-// Версия 2 использует отдельное локальное сохранение и не импортирует прогресс v1.
-const SAVE_KEY = 'srochnik.save.v2';
+// Версия 2 не импортирует прогресс v1.
+const SAVE_KEY_BASE = 'srochnik.save.v2';
+const CLOUD_META_KEY_BASE = 'srochnik.cloud.meta.v2';
 const HOUR_MS = 3600000;
 const ENERGY_MS = 216000; // 3 минуты 36 секунд на +1 энергии
 const HP_MS = 216000; // здоровье восстанавливается так же
@@ -99,6 +100,26 @@ function fmtDuration(ms) {
 /* ---------- Telegram ---------- */
 
 const tg = window.Telegram?.WebApp || null;
+
+// Изолируем данные аккаунтов даже при общем хранилище Telegram WebView.
+const storageUserId = tg?.initData && Number.isSafeInteger(tg?.initDataUnsafe?.user?.id) && tg.initDataUnsafe.user.id > 0
+  ? String(tg.initDataUnsafe.user.id) : '';
+const SAVE_KEY = storageUserId ? `${SAVE_KEY_BASE}.user.${storageUserId}` : SAVE_KEY_BASE;
+const CLOUD_META_KEY = storageUserId ? `${CLOUD_META_KEY_BASE}.user.${storageUserId}` : CLOUD_META_KEY_BASE;
+
+// Старый общий ключ переносим только при подтверждённом владельце.
+if (storageUserId) {
+  try {
+    const previousMeta = JSON.parse(localStorage.getItem(CLOUD_META_KEY_BASE) || '{}');
+    if (String(previousMeta.user || '') === storageUserId && !localStorage.getItem(SAVE_KEY)) {
+      const previousSave = localStorage.getItem(SAVE_KEY_BASE);
+      if (previousSave) {
+        localStorage.setItem(SAVE_KEY, previousSave);
+        if (!localStorage.getItem(CLOUD_META_KEY)) localStorage.setItem(CLOUD_META_KEY, JSON.stringify(previousMeta));
+      }
+    }
+  } catch { /* При недоступном хранилище начнём с облачной копии. */ }
+}
 
 function tgUser() {
   try {
@@ -1130,7 +1151,7 @@ function loadState(rawOverride) {
 const state = loadState();
 
 // Архив хранится отдельно на устройстве и никогда не отправляется в облако.
-const LOG_ARCHIVE_KEY = `${SAVE_KEY}.log-archive.${tgUser()?.id || 'local'}`;
+const LOG_ARCHIVE_KEY = `${SAVE_KEY_BASE}.log-archive.${storageUserId || 'local'}`;
 function readLogArchive() {
   try { const value = JSON.parse(localStorage.getItem(LOG_ARCHIVE_KEY) || '[]'); return Array.isArray(value) ? value : []; }
   catch { return []; }
@@ -1150,7 +1171,6 @@ function archiveOldEvents(entries, now = Date.now()) {
 let saveTimer = null;
 let isResetting = false;
 const CLOUD_URL = 'https://kxuwpsfkjeyzsytclsys.supabase.co/functions/v1/telegram-save';
-const CLOUD_META_KEY = 'srochnik.cloud.meta.v2';
 let cloudRevision = null;
 let cloudReady = false;
 let cloudPending = false;
@@ -1334,6 +1354,7 @@ async function initializeCloud() {
     isAdmin = result.is_admin === true;
     const adminRow = $('#adminRow');
     if (adminRow) adminRow.hidden = !isAdmin;
+    updateAdminTab();
     if (result.exists) {
       const useLocal = Boolean(localRaw && localMeta.user === user && localMeta.dirty && localMeta.revision === result.revision);
       if (localRaw && !useLocal && (!localMeta.user || localMeta.revision !== result.revision)) {
@@ -1354,12 +1375,14 @@ async function initializeCloud() {
       cloudPending = true;
     }
     cloudReady = true;
+    updateAdminTab();
     setCloudMeta({ user, revision: cloudRevision, dirty: cloudPending });
     cloudStatus('Аккаунт Telegram подключён');
   } catch {
     if (sessionExpired || accountBanned) return;
     cloudInitFailed = true;
     cloudReady = false;
+    updateAdminTab();
     if (localMeta.user === user) setCloudMeta({ ...localMeta, dirty: true });
     cloudStatus('Облако недоступно. Игра сохранится на устройстве; перезапустите её для синхронизации.');
   }
@@ -3133,7 +3156,7 @@ function renderAdmin(el) {
     <div id="adminList">Загрузка…</div>
     <label class="admin-label">Telegram ID <input id="adminTarget" inputmode="numeric" placeholder="Telegram ID"></label>
     <button class="btn btn-ghost" id="adminLoad">Загрузить игрока</button>
-    <div id="adminEditor"></div><button class="btn btn-ghost" data-close>Закрыть</button>`;
+    <div id="adminEditor"></div>`;
   const list = $('#adminList', el);
   const target = $('#adminTarget', el);
   const editor = $('#adminEditor', el);
@@ -3269,6 +3292,21 @@ function renderLocalAdminPanel() {
     Object.assign(state, defaultState(), { name, nameChosen: true });
     save(); renderAll(); renderLocalAdminPanel(); toast('Локальный прогресс сброшен', 'good');
   };
+}
+
+function updateAdminTab() {
+  const button = $('#adminTab');
+  if (!button) return;
+  const localPreview = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+  button.hidden = !(isAdmin && cloudReady) && !localPreview;
+}
+
+function renderAdminPanel() {
+  const root = $('#adminPanelContent');
+  if (!root) return;
+  if (isAdmin && cloudReady) renderAdmin(root);
+  else if (['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) renderLocalAdminPanel();
+  else root.innerHTML = '<p class="admin-access-denied">Доступ к панели закрыт.</p>';
 }
 
 function shopItemHtml(item, noTrips) {
@@ -3425,7 +3463,7 @@ function setTab(tab) {
     staffTab = 'leaderboard';
     renderStaffTab();
   }
-  if (tab === 'admin') renderLocalAdminPanel();
+  if (tab === 'admin') renderAdminPanel();
   $$('.panel').forEach((panel) => {
     panel.classList.toggle('is-active', panel.dataset.panel === tab);
   });
@@ -4036,9 +4074,7 @@ async function boot() {
   renderAll();
   renderLog();
   bindEvents();
-  // Доступ только для локального предпросмотра. Облачные права не меняются.
-  const adminTab = $('#adminTab');
-  if (adminTab && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) adminTab.hidden = false;
+  updateAdminTab();
   tick();
   checkAchievements(true);
   setTab('map');
