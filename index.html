@@ -32,12 +32,6 @@
         <div class="energy-popover-wrap"><button class="energy-inline" id="energyDetailsBtn" type="button" aria-label="Восстановление энергии" aria-expanded="false" aria-controls="energyPopover"><span class="energy-inline-icon" aria-hidden="true">⚡</span><b id="energyVal">100</b><span class="bar"><i class="fill energy" id="energyBar"></i></span></button><div class="energy-popover" id="energyPopover" role="status" hidden></div></div>
         </div>
       </div>
-      <button class="status-line" id="activityTop" type="button" aria-label="Открыть казарму" aria-live="polite">
-        <span class="status-indicator" aria-hidden="true"></span>
-        <b id="statusText">Свободен</b>
-        <span id="statusTime"></span>
-        <span class="status-track"><i id="statusProgress"></i></span>
-      </button>
     </header>
 
     <main class="layout">
@@ -435,6 +429,14 @@
     </main>
   </div>
 
+  <div class="activity-dock" id="activityDock" hidden>
+    <button class="status-line" id="activityTop" type="button" aria-label="Открыть казарму" aria-live="polite">
+      <span class="status-indicator" aria-hidden="true"></span>
+      <b id="statusText"></b>
+      <span id="statusTime"></span>
+      <span class="status-track"><i id="statusProgress"></i></span>
+    </button>
+  </div>
   <nav class="bottom-nav" aria-label="Навигация">
     <button class="nav-btn is-active" data-tab="map"><span class="nav-icon">🗺️</span><span>Гарнизон</span></button>
     <button class="nav-btn" data-tab="inventory"><span class="nav-icon">🎒</span><span>Инвентарь</span></button>

@@ -777,6 +777,20 @@ button:focus-visible {
   font-size: 10px;
   color: var(--muted);
 }
+.activity-dock {
+  position: fixed;
+  left: 50%;
+  bottom: calc(76px + var(--safe-b));
+  z-index: 49;
+  width: min(calc(100% - 22px), 430px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.activity-dock .status-line {
+  width: 100%;
+  pointer-events: auto;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .28);
+}
 .status-line b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .status-line > span:not(.status-indicator) { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .status-indicator { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--lime); }

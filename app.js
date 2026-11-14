@@ -1499,6 +1499,7 @@ const els = {
   statusText: $('#statusText'),
   statusTime: $('#statusTime'),
   statusProgress: $('#statusProgress'),
+  activityDock: $('#activityDock'),
   soundToggle: $('#soundToggle'),
   notifyToggle: $('#notifyToggle'),
   tutorial: $('#tutorial'),
@@ -2348,6 +2349,7 @@ function renderStatusLine() {
   if (!els.statusText) return;
   const now = Date.now();
   const active = busyAction();
+  if (els.activityDock) els.activityDock.hidden = !active;
   if (active) {
     const elapsed = Math.max(0, now - (state.busy.startedAt || (state.busy.until - (state.busy.totalMs || HOUR_MS))));
     const total = state.busy.totalMs || Math.max(HOUR_MS, state.busy.until - (state.busy.startedAt || now));
@@ -2356,7 +2358,7 @@ function renderStatusLine() {
     els.statusTime.textContent = fmtClock(remaining);
     els.statusProgress.style.width = `${clamp((elapsed / total) * 100, 0, 100)}%`;
   } else {
-    els.statusText.textContent = 'Свободен';
+    els.statusText.textContent = '';
     els.statusTime.textContent = '';
     els.statusProgress.style.width = '0%';
   }
