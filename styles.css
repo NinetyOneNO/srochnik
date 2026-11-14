@@ -4216,3 +4216,24 @@ body {
 :root[data-theme="light"] .map-node-center .map-node-tile {
   background: #e7edf2 !important;
 }
+
+/* Компактная строка занятия: рамка под содержимое, без пустого места. */
+.activity-dock { display: flex; justify-content: center; }
+.activity-dock .status-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, max-content) max-content;
+  gap: 3px 5px;
+  width: max-content;
+  max-width: 100%;
+  padding: 7px 10px;
+}
+.activity-dock .status-line b { flex: none; }
+.activity-dock .status-details {
+  grid-column: 1 / -1;
+  padding-left: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 430px) {
+  .activity-dock .status-line { grid-template-columns: minmax(0, max-content) max-content; }
+}
