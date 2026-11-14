@@ -1498,6 +1498,7 @@ const els = {
   moraleHint: $('#moraleHint'),
   statusText: $('#statusText'),
   statusTime: $('#statusTime'),
+  statusDetails: $('#statusDetails'),
   statusProgress: $('#statusProgress'),
   activityDock: $('#activityDock'),
   soundToggle: $('#soundToggle'),
@@ -2356,10 +2357,23 @@ function renderStatusLine() {
     const remaining = Math.max(0, active.until - now);
     els.statusText.textContent = `${active.icon} ${active.title}`;
     els.statusTime.textContent = fmtClock(remaining);
+    const reward = state.busy.reward;
+    const details = [];
+    if (total > 0) details.push(`Всего ${fmtDuration(total)}`);
+    if (reward) {
+      const rewards = [
+        reward.xpGain ? `+${reward.xpGain} XP` : '',
+        reward.moneyGain ? `+${fmt(reward.moneyGain)} ₽` : '',
+        reward.moraleGain ? `${reward.moraleGain > 0 ? '+' : ''}${reward.moraleGain} 🔥` : ''
+      ].filter(Boolean);
+      if (rewards.length) details.push(`После завершения: ${rewards.join(' · ')}`);
+    }
+    if (els.statusDetails) els.statusDetails.textContent = details.join(' · ');
     els.statusProgress.style.width = `${clamp((elapsed / total) * 100, 0, 100)}%`;
   } else {
     els.statusText.textContent = '';
     els.statusTime.textContent = '';
+    if (els.statusDetails) els.statusDetails.textContent = '';
     els.statusProgress.style.width = '0%';
   }
 }
