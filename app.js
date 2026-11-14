@@ -3211,6 +3211,66 @@ function renderAdmin(el) {
   });
 }
 
+// Локальная панель для проверки интерфейса без Telegram и Supabase.
+function renderLocalAdminPanel() {
+  const root = $('#adminPanelContent');
+  if (!root) return;
+  root.innerHTML = `<div class="admin-local-head"><div><h3>Локальный игрок</h3><p>Изменения применяются только в этом браузере.</p></div><span class="admin-local-badge">LOCAL</span></div>
+    <div class="admin-grid">
+      <label>Имя <input id="localAdminName" maxlength="24"></label>
+      <label>Опыт (XP) <input id="localAdminXp" type="number" min="0" max="1000000" step="1"></label>
+      <label>Деньги (₽) <input id="localAdminMoney" type="number" min="0" max="1000000000" step="1"></label>
+      <label>Энергия <input id="localAdminEnergy" type="number" min="0" max="500" step="1"></label>
+      <label>Макс. энергия <input id="localAdminMaxEnergy" type="number" min="100" max="500" step="1"></label>
+      <label>Здоровье <input id="localAdminHp" type="number" min="0" max="300" step="1"></label>
+      <label>Макс. здоровье <input id="localAdminMaxHp" type="number" min="100" max="300" step="1"></label>
+      <label>Боевой дух <input id="localAdminMorale" type="number" min="0" max="100" step="1"></label>
+    </div>
+    <div class="admin-local-actions"><button class="btn btn-primary" id="localAdminSave">Сохранить</button><button class="btn btn-danger" id="localAdminReset">Сбросить прогресс</button></div>
+    <div class="admin-grant"><h3>Выдать предмет</h3><p>Количество не ограничивается. Для постоянных улучшений значение увеличится сверх обычного лимита.</p><div class="admin-grant-row"><select id="localAdminItem">${SHOP.map((item) => `<option value="${item.id}">${item.icon} ${item.name}${item.permanent ? ' · постоянный' : ''}</option>`).join('')}</select><input id="localAdminItemCount" type="number" min="1" max="1000000" step="1" value="1" aria-label="Количество предметов"><button class="btn btn-primary" id="localAdminGrant">Выдать</button></div></div>
+    <details class="admin-advanced"><summary>Полное сохранение JSON</summary><textarea id="localAdminData" rows="14" spellcheck="false"></textarea><button class="btn btn-ghost" id="localAdminSaveJson">Сохранить JSON</button></details>`;
+  const fields = { Name: 'name', Xp: 'xp', Money: 'money', Energy: 'energy', MaxEnergy: 'maxEnergy', Hp: 'hp', MaxHp: 'maxHp', Morale: 'morale' };
+  for (const [suffix, key] of Object.entries(fields)) $(`#localAdmin${suffix}`, root).value = state[key] ?? (key === 'name' ? '' : 0);
+  $('#localAdminData', root).value = JSON.stringify(state, null, 2);
+  $('#localAdminSave', root).onclick = () => {
+    const next = { ...state };
+    for (const [suffix, key] of Object.entries(fields)) {
+      const input = $(`#localAdmin${suffix}`, root);
+      if (key === 'name') next.name = input.value.trim() || 'Срочник';
+      else if (!input.checkValidity() || !Number.isSafeInteger(Number(input.value))) { toast('Проверьте значения полей', 'bad'); return; }
+      else next[key] = Number(input.value);
+    }
+    if (next.energy > next.maxEnergy || next.hp > next.maxHp) { toast('Значение не может превышать максимум', 'bad'); return; }
+    Object.assign(state, next); save(); renderAll(); renderLocalAdminPanel(); toast('Локальные данные сохранены', 'good');
+  };
+  $('#localAdminSaveJson', root).onclick = () => {
+    try {
+      const data = JSON.parse($('#localAdminData', root).value);
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error();
+      Object.assign(state, loadState(JSON.stringify({ ...data, saveVersion: 2 }))); save(); renderAll(); renderLocalAdminPanel(); toast('JSON сохранён', 'good');
+    } catch { toast('Некорректный JSON', 'bad'); }
+  };
+  $('#localAdminGrant', root).onclick = () => {
+    const id = $('#localAdminItem', root).value;
+    const count = Number($('#localAdminItemCount', root).value);
+    const item = SHOP.find((entry) => entry.id === id);
+    if (!item || !Number.isSafeInteger(count) || count < 1 || count > 1000000) { toast('Введите корректное количество', 'bad'); return; }
+    if (item.permanent) {
+      state.purchases[id] = (state.purchases[id] || 0) + count;
+      for (let i = 0; i < count; i += 1) item.apply();
+    } else {
+      state.inventory[id] = (state.inventory[id] || 0) + count;
+    }
+    save(); renderAll(); renderLocalAdminPanel(); toast(`${item.icon} Выдано: ${item.name} ×${count}`, 'good');
+  };
+  $('#localAdminReset', root).onclick = () => {
+    if (!confirm('Сбросить локальный прогресс?')) return;
+    const name = state.name;
+    Object.assign(state, defaultState(), { name, nameChosen: true });
+    save(); renderAll(); renderLocalAdminPanel(); toast('Локальный прогресс сброшен', 'good');
+  };
+}
+
 function shopItemHtml(item, noTrips) {
   const bought = state.purchases[item.id] || 0;
   const soldOut = Boolean(item.max) && bought >= item.max;
@@ -3365,6 +3425,7 @@ function setTab(tab) {
     staffTab = 'leaderboard';
     renderStaffTab();
   }
+  if (tab === 'admin') renderLocalAdminPanel();
   $$('.panel').forEach((panel) => {
     panel.classList.toggle('is-active', panel.dataset.panel === tab);
   });
@@ -3975,6 +4036,9 @@ async function boot() {
   renderAll();
   renderLog();
   bindEvents();
+  // Доступ только для локального предпросмотра. Облачные права не меняются.
+  const adminTab = $('#adminTab');
+  if (adminTab && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) adminTab.hidden = false;
   tick();
   checkAchievements(true);
   setTab('map');

@@ -418,13 +418,13 @@
             <span class="setting-copy"><b>Новая служба</b><small>Удалить локальный прогресс</small></span>
             <button class="settings-action is-danger" id="settingsReset">Сбросить</button>
           </div>
-          <div class="setting-row" id="adminRow" hidden>
-            <span class="setting-icon">🛡️</span>
-            <span class="setting-copy"><b>Управление игроками</b><small>Панель администратора</small></span>
-            <button class="settings-action" id="adminBtn">Открыть</button>
-          </div>
           <p class="settings-note" id="cloudStatus">Подключение сохранения…</p>
         </div>
+      </section>
+      <section class="panel admin-panel" data-panel="admin" aria-label="Панель администратора">
+        <div class="panel-top"><button class="panel-back" data-back>← Гарнизон</button><span class="live-chip">🛡️ Администратор</span></div>
+        <div class="panel-head"><h2>Панель администратора</h2></div>
+        <div class="card admin-panel-card" id="adminPanelContent"></div>
       </section>
     </main>
   </div>
@@ -444,6 +444,7 @@
     <button class="nav-btn" data-tab="hero"><span class="nav-icon">👤</span><span>Боец</span></button>
     <button class="nav-btn" data-tab="log"><span class="nav-icon">📜</span><span>События</span></button>
     <button class="nav-btn" data-tab="settings"><span class="nav-icon">⚙️</span><span>Настройки</span></button>
+    <button class="nav-btn" id="adminTab" data-tab="admin" hidden><span class="nav-icon">🛡️</span><span>Панель</span></button>
   </nav>
 
   <div class="tutorial" id="tutorial" aria-hidden="true">
