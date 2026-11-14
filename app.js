@@ -2355,11 +2355,10 @@ function renderStatusLine() {
     const elapsed = Math.max(0, now - (state.busy.startedAt || (state.busy.until - (state.busy.totalMs || HOUR_MS))));
     const total = state.busy.totalMs || Math.max(HOUR_MS, state.busy.until - (state.busy.startedAt || now));
     const remaining = Math.max(0, active.until - now);
-    els.statusText.textContent = `${active.icon} ${active.title}`;
+    els.statusText.textContent = `${active.icon} ${active.title} —`;
     els.statusTime.textContent = fmtClock(remaining);
     const reward = state.busy.reward;
     const details = [];
-    if (total > 0) details.push(`Всего ${fmtDuration(total)}`);
     if (reward) {
       const rewards = [
         reward.xpGain ? `+${reward.xpGain} XP` : '',

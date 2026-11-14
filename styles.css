@@ -794,6 +794,8 @@ button:focus-visible {
 .status-line b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .status-line > span:not(.status-indicator) { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .status-details { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 9px; }
+.activity-dock .status-line { flex-wrap: wrap; }
+.activity-dock .status-details { flex-basis: 100%; padding-left: 14px; white-space: nowrap; }
 .status-indicator { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--lime); }
 .status-track { position: absolute; left: 8px; right: 8px; bottom: 3px; height: 2px; background: rgba(255,255,255,.08); }
 .status-track i { display: block; width: 0; height: 100%; background: var(--lime); }
