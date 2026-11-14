@@ -3785,6 +3785,25 @@ body {
 .map-reset.is-changed { gap: 6px; }
 .map-reset.is-changed .map-reset-label { max-width: 120px; opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .map-reset, .map-reset-label { transition: none; } }
+
+/* Мобильные устройства: сохраняем стиль, но отключаем самые дорогие эффекты. */
+@media (max-width: 719px) {
+  .bg { filter: none; }
+  .card, .hero-card, .banner, .action-card, .duty-picker, .shop-item,
+  .care-item, .staff-btn, .login-day, .map-help, .map-node-pill,
+  .bottom-nav, .sheet, .tutorial-card {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .map-node-pill, .map-help, .bottom-nav {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, .16);
+  }
+  .map-stars { animation: none; }
+}
+
+@media (max-width: 719px) and (prefers-reduced-motion: no-preference) {
+  .panel { animation-duration: .16s; }
+}
 .map-zoom-content { position: absolute; inset: 0; }
 .map-zoom-content.is-scaled .map-node-pill { backdrop-filter: none; -webkit-backdrop-filter: none; }
 .map-node-center { margin-top: 16px; }

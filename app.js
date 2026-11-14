@@ -3368,6 +3368,7 @@ function setTab(tab) {
 
 let lastCareKey = '';
 let lastPackageState = '';
+let lastMapBusyKey = '';
 
 function updateCareLive() {
   const pkg = packageState();
@@ -3473,7 +3474,13 @@ function tick() {
   if ($('[data-panel="actions"]')?.classList.contains('is-active')) renderCurrentDuty();
   updateCareLive();
   checkDailyReset();
-  renderMap();
+  // Карта не меняется каждую секунду: не заставляем мобильный браузер
+  // заново пересчитывать её стеклянные узлы без изменения состояния.
+  const mapBusyKey = state.busy?.id ? `${state.busy.id}:${state.busy.until}` : '';
+  if (mapBusyKey !== lastMapBusyKey) {
+    lastMapBusyKey = mapBusyKey;
+    renderMap();
+  }
   if (pruneLog(now)) { renderLog(); save(); }
 
 }
