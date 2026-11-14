@@ -3149,6 +3149,19 @@ async function adminRequest(action, target, data, revision) {
   return result;
 }
 
+// Ранг определяется опытом: выбор ранга устанавливает его начальный порог,
+// а ручное редактирование опыта сразу обновляет выбранный ранг.
+function bindAdminRank(select, xpInput) {
+  select.innerHTML = RANKS.map((rank, index) => `<option value="${index}">${rank.title} · от ${fmt(rank.xp)} XP</option>`).join('');
+  const syncFromXp = () => {
+    const xp = Number(xpInput.value);
+    if (xpInput.value.trim() && Number.isSafeInteger(xp) && xp >= 0) select.value = String(rankIndexFor(xp));
+  };
+  select.addEventListener('change', () => { xpInput.value = RANKS[Number(select.value)].xp; });
+  xpInput.addEventListener('input', syncFromXp);
+  syncFromXp();
+}
+
 function renderAdmin(el) {
   el.innerHTML = `<h3 class="sheet-title">Управление игроками</h3>
     <p class="sheet-text">Поиск по последним 100 игрокам или точный поиск по Telegram ID.</p>
@@ -3182,6 +3195,7 @@ function renderAdmin(el) {
         <p class="sheet-text">ID: ${escapeHtml(id)} · ревизия ${player.revision}${player.banned ? ' · заблокирован' : ''}</p>
         <div class="admin-grid">
           <label>Имя <input id="adminName" maxlength="64"></label>
+          <label>Ранг <select id="adminRank"></select></label>
           <label>Опыт (XP) <input id="adminXp" type="number" min="0" max="1000000" step="1"></label>
           <label>Деньги (₽) <input id="adminMoney" type="number" min="0" max="1000000000" step="1"></label>
           <label>Энергия <input id="adminEnergy" type="number" min="0" max="500" step="1"></label>
@@ -3196,6 +3210,7 @@ function renderAdmin(el) {
         <button class="btn btn-danger" id="adminReset">Сбросить прогресс</button>`;
       const fields = { Name: 'name', Xp: 'xp', Money: 'money', Energy: 'energy', MaxEnergy: 'maxEnergy', Hp: 'hp', MaxHp: 'maxHp', Morale: 'morale' };
       for (const [suffix, key] of Object.entries(fields)) $(`#admin${suffix}`, editor).value = player.data[key] ?? (key === 'maxEnergy' || key === 'maxHp' ? 100 : key === 'name' ? '' : 0);
+      bindAdminRank($('#adminRank', editor), $('#adminXp', editor));
       $('#adminData', editor).value = JSON.stringify(player.data, null, 2);
       const submit = async (data) => {
         if (!confirm(`Сохранить изменения игрока ${id}?`)) return;
@@ -3241,6 +3256,7 @@ function renderLocalAdminPanel() {
   root.innerHTML = `<div class="admin-local-head"><div><h3>Локальный игрок</h3><p>Изменения применяются только в этом браузере.</p></div><span class="admin-local-badge">LOCAL</span></div>
     <div class="admin-grid">
       <label>Имя <input id="localAdminName" maxlength="24"></label>
+      <label>Ранг <select id="localAdminRank"></select></label>
       <label>Опыт (XP) <input id="localAdminXp" type="number" min="0" max="1000000" step="1"></label>
       <label>Деньги (₽) <input id="localAdminMoney" type="number" min="0" max="1000000000" step="1"></label>
       <label>Энергия <input id="localAdminEnergy" type="number" min="0" max="500" step="1"></label>
@@ -3254,6 +3270,7 @@ function renderLocalAdminPanel() {
     <details class="admin-advanced"><summary>Полное сохранение JSON</summary><textarea id="localAdminData" rows="14" spellcheck="false"></textarea><button class="btn btn-ghost" id="localAdminSaveJson">Сохранить JSON</button></details>`;
   const fields = { Name: 'name', Xp: 'xp', Money: 'money', Energy: 'energy', MaxEnergy: 'maxEnergy', Hp: 'hp', MaxHp: 'maxHp', Morale: 'morale' };
   for (const [suffix, key] of Object.entries(fields)) $(`#localAdmin${suffix}`, root).value = state[key] ?? (key === 'name' ? '' : 0);
+  bindAdminRank($('#localAdminRank', root), $('#localAdminXp', root));
   $('#localAdminData', root).value = JSON.stringify(state, null, 2);
   $('#localAdminSave', root).onclick = () => {
     const next = { ...state };
@@ -3295,10 +3312,11 @@ function renderLocalAdminPanel() {
 }
 
 function updateAdminTab() {
-  const button = $('#adminTab');
-  if (!button) return;
+  const row = $('#adminRow');
+  const localRow = $('#adminRowLocal');
   const localPreview = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
-  button.hidden = !(isAdmin && cloudReady) && !localPreview;
+  if (row) row.hidden = !(isAdmin && cloudReady);
+  if (localRow) localRow.hidden = !localPreview;
 }
 
 function renderAdminPanel() {
@@ -3916,7 +3934,10 @@ function bindEvents() {
   $('#tutorialBtn').addEventListener('click', () => showTutorial(true));
   $('#tutorialNext').addEventListener('click', advanceTutorial);
   const adminBtn = $('#adminBtn');
-  if (adminBtn) adminBtn.addEventListener('click', () => { if (isAdmin && cloudReady) openModal(renderAdmin); });
+  if (adminBtn) adminBtn.addEventListener('click', () => { if (isAdmin && cloudReady) setTab('admin'); });
+  $('#adminLocalBtn')?.addEventListener('click', () => {
+    if (['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) setTab('admin');
+  });
   $('#tutorialSkip').addEventListener('click', closeTutorial);
 
   const leaderboardBtn = $('#leaderboardBtn');
