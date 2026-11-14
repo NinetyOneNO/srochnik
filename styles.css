@@ -4220,12 +4220,14 @@ body {
 /* Компактная строка занятия: рамка под содержимое, без пустого места. */
 .activity-dock { display: flex; justify-content: center; }
 .activity-dock .status-line {
-  display: grid;
+  display: inline-grid;
   grid-template-columns: auto minmax(0, max-content) max-content;
   gap: 3px 5px;
   width: max-content;
   max-width: 100%;
   padding: 7px 10px;
+  box-sizing: border-box;
+  justify-items: start;
 }
 .activity-dock .status-line b { flex: none; }
 .activity-dock .status-details {
@@ -4233,6 +4235,10 @@ body {
   padding-left: 0;
   white-space: normal;
   overflow-wrap: anywhere;
+  width: max-content;
+  max-width: 100%;
+  justify-self: start;
+  text-align: left;
 }
 @media (max-width: 430px) {
   .activity-dock .status-line { grid-template-columns: minmax(0, max-content) max-content; }
