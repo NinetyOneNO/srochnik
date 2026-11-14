@@ -3804,8 +3804,7 @@ body {
 .status-line > span:not(.status-indicator) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .status-line .status-track { display: none; }
 .map-stage { border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; }
-.map-stage { overflow: visible; touch-action: none; cursor: grab; }
-.map-stage.is-dragging { cursor: grabbing; }
+.map-stage { overflow: visible; touch-action: pan-y; cursor: default; }
 .map-controls { position: relative; z-index: 60; display: flex; gap: 8px; }
 .map-head { position: relative; z-index: 60; }
 .map-head { justify-content: flex-end; }

@@ -3639,7 +3639,7 @@ function seedLog() {
   });
 }
 
-// Масштабируем и перемещаем карту независимо от остальных экранов.
+// Масштабируем карту без перемещения плоскости.
 function bindMapZoom() {
   const stage = els.mapStage;
   const content = $('#mapZoomContent');
@@ -3647,10 +3647,7 @@ function bindMapZoom() {
   const resetLabel = $('#mapResetLabel');
   if (!stage || !content) return;
   let scale = 1;
-  let x = 0;
-  let y = 0;
   let pinch = null;
-  let drag = null;
   let suppressClickUntil = 0;
   let applyFrame = 0;
 
@@ -3661,9 +3658,9 @@ function bindMapZoom() {
     content.classList.toggle('is-scaled', Math.abs(scale - 1) > .001);
     content.style.width = `${stage.clientWidth}px`;
     content.style.height = `${stage.clientHeight}px`;
-    content.style.left = `${(stage.clientWidth * (1 - scale) / 2 + x) / scale}px`;
-    content.style.top = `${(stage.clientHeight * (1 - scale) / 2 + y) / scale}px`;
-    const changed = Math.abs(scale - 1) > .001 || Math.abs(x) > .5 || Math.abs(y) > .5;
+    content.style.left = `${stage.clientWidth * (1 - scale) / (2 * scale)}px`;
+    content.style.top = `${stage.clientHeight * (1 - scale) / (2 * scale)}px`;
+    const changed = Math.abs(scale - 1) > .001;
     resetButton?.classList.toggle('is-changed', changed);
     if (resetLabel) resetLabel.setAttribute('aria-hidden', String(!changed));
   }
@@ -3680,12 +3677,7 @@ function bindMapZoom() {
 
   function zoomAt(next, clientX, clientY) {
     const rect = stage.getBoundingClientRect();
-    const px = clientX - rect.left - rect.width / 2;
-    const py = clientY - rect.top - rect.height / 2;
     next = clamp(next, 0.1, 20);
-    const ratio = next / scale;
-    x = px - (px - x) * ratio;
-    y = py - (py - y) * ratio;
     scale = next;
     apply();
   }
@@ -3697,64 +3689,17 @@ function bindMapZoom() {
 
   resetButton?.addEventListener('click', () => {
     scale = 1;
-    x = 0;
-    y = 0;
     apply();
   });
-
-  stage.addEventListener('pointerdown', (event) => {
-    if (event.pointerType !== 'mouse' || event.button !== 0) return;
-    drag = { id: event.pointerId, startX: event.clientX, startY: event.clientY, x, y, moved: false };
-  });
-  stage.addEventListener('pointermove', (event) => {
-    if (!drag || drag.id !== event.pointerId) return;
-    const dx = event.clientX - drag.startX;
-    const dy = event.clientY - drag.startY;
-    if (!drag.moved && Math.hypot(dx, dy) < 6) return;
-    if (!drag.moved) {
-      drag.moved = true;
-      stage.setPointerCapture(event.pointerId);
-      stage.classList.add('is-dragging');
-    }
-    x = drag.x + dx;
-    y = drag.y + dy;
-    apply();
-  });
-  const endDrag = (event) => {
-    if (!drag || drag.id !== event.pointerId) return;
-    if (drag.moved) suppressClickUntil = Date.now() + 400;
-    drag = null;
-    stage.classList.remove('is-dragging');
-  };
-  stage.addEventListener('pointerup', endDrag);
-  stage.addEventListener('pointercancel', endDrag);
 
   stage.addEventListener('touchstart', (event) => {
-    if (event.touches.length === 1) {
-      const touch = event.touches[0];
-      drag = { startX: touch.clientX, startY: touch.clientY, x, y, moved: false };
-      return;
-    }
     if (event.touches.length !== 2) return;
-    drag = null;
     const [a, b] = event.touches;
     pinch = { distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), scale };
     suppressClickUntil = Date.now() + 500;
   }, { passive: true });
 
   stage.addEventListener('touchmove', (event) => {
-    if (event.touches.length === 1 && drag && !pinch) {
-      const touch = event.touches[0];
-      const dx = touch.clientX - drag.startX;
-      const dy = touch.clientY - drag.startY;
-      if (!drag.moved && Math.hypot(dx, dy) < 6) return;
-      event.preventDefault();
-      drag.moved = true;
-      x = drag.x + dx;
-      y = drag.y + dy;
-      apply();
-      return;
-    }
     if (!pinch || event.touches.length !== 2) return;
     event.preventDefault();
     const [a, b] = event.touches;
@@ -3767,10 +3712,6 @@ function bindMapZoom() {
     if (pinch && event.touches.length < 2) {
       pinch = null;
       suppressClickUntil = Date.now() + 500;
-    }
-    if (drag && event.touches.length === 0) {
-      if (drag.moved) suppressClickUntil = Date.now() + 500;
-      drag = null;
     }
   };
   stage.addEventListener('touchend', endPinch);
