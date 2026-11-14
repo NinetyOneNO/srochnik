@@ -4090,6 +4090,56 @@ body {
   background: linear-gradient(145deg, rgba(255,255,255,.55), rgba(225,239,245,.48));
 }
 :root[data-theme="light"] .bottom-nav { background: rgba(238,246,248,.58); }
+
+/* Обычный интерфейс без Liquid Glass: непрозрачные поверхности и рамки. */
+*, *::before, *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.panel:not(.settings-panel) .card,
+.panel:not(.settings-panel) .hero-card,
+.panel:not(.settings-panel) .banner,
+.panel:not(.settings-panel) .action-card,
+.panel:not(.settings-panel) .duty-picker,
+.panel:not(.settings-panel) .shop-item,
+.panel:not(.settings-panel) .care-item,
+.panel:not(.settings-panel) .staff-btn,
+.panel:not(.settings-panel) .login-day,
+.topbar .profile-chip,
+.topbar .resource-chip,
+.activity-dock .status-line,
+.bottom-nav,
+.sheet,
+.tutorial-card,
+.map-controls .map-help {
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .16);
+}
+
+.bottom-nav::before { display: none; }
+
+:root[data-theme="light"] .panel:not(.settings-panel) .card,
+:root[data-theme="light"] .panel:not(.settings-panel) .hero-card,
+:root[data-theme="light"] .panel:not(.settings-panel) .banner,
+:root[data-theme="light"] .panel:not(.settings-panel) .action-card,
+:root[data-theme="light"] .panel:not(.settings-panel) .duty-picker,
+:root[data-theme="light"] .panel:not(.settings-panel) .shop-item,
+:root[data-theme="light"] .panel:not(.settings-panel) .care-item,
+:root[data-theme="light"] .panel:not(.settings-panel) .staff-btn,
+:root[data-theme="light"] .panel:not(.settings-panel) .login-day,
+:root[data-theme="light"] .topbar .profile-chip,
+:root[data-theme="light"] .topbar .resource-chip,
+:root[data-theme="light"] .activity-dock .status-line,
+:root[data-theme="light"] .bottom-nav,
+:root[data-theme="light"] .sheet,
+:root[data-theme="light"] .tutorial-card,
+:root[data-theme="light"] .map-controls .map-help {
+  background: #f4f8f9;
+  border-color: var(--line-strong);
+  box-shadow: 0 4px 12px rgba(55, 77, 111, .12);
+}
 :root[data-theme="light"] .map-node-pill, :root[data-theme="light"] .map-node-center .map-node-pill { background: rgba(246,251,251,.67); }
 
 /* Навигационные кнопки и статусы в том же стеклянном стиле, что и панели. */
@@ -4108,3 +4158,58 @@ body {
   box-shadow: inset 0 1px rgba(255,255,255,.8), 0 6px 18px rgba(91,118,135,.12);
 }
 :root[data-theme="light"] .panel-back:hover { color: #364e5d; background: rgba(249,253,253,.9); }
+
+/* Финальная плоская тема: никаких стеклянных градиентов и бликов. */
+.panel-back,
+.live-chip,
+.map-node-pill,
+.map-node-tile,
+.energy-popover,
+.toast,
+.panel:not(.settings-panel) .card,
+.panel:not(.settings-panel) .hero-card,
+.panel:not(.settings-panel) .banner,
+.panel:not(.settings-panel) .action-card,
+.panel:not(.settings-panel) .duty-picker,
+.panel:not(.settings-panel) .shop-item,
+.panel:not(.settings-panel) .care-item,
+.panel:not(.settings-panel) .staff-btn,
+.panel:not(.settings-panel) .login-day,
+.activity-dock .status-line,
+.bottom-nav,
+.sheet,
+.tutorial-card {
+  background: var(--card) !important;
+  border: 1px solid var(--line-strong) !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .14) !important;
+}
+
+:root[data-theme="light"] .panel-back,
+:root[data-theme="light"] .live-chip,
+:root[data-theme="light"] .map-node-pill,
+:root[data-theme="light"] .map-node-tile,
+:root[data-theme="light"] .energy-popover,
+:root[data-theme="light"] .toast,
+:root[data-theme="light"] .panel:not(.settings-panel) .card,
+:root[data-theme="light"] .panel:not(.settings-panel) .hero-card,
+:root[data-theme="light"] .panel:not(.settings-panel) .banner,
+:root[data-theme="light"] .panel:not(.settings-panel) .action-card,
+:root[data-theme="light"] .panel:not(.settings-panel) .duty-picker,
+:root[data-theme="light"] .panel:not(.settings-panel) .shop-item,
+:root[data-theme="light"] .panel:not(.settings-panel) .care-item,
+:root[data-theme="light"] .panel:not(.settings-panel) .staff-btn,
+:root[data-theme="light"] .panel:not(.settings-panel) .login-day,
+:root[data-theme="light"] .activity-dock .status-line,
+:root[data-theme="light"] .bottom-nav,
+:root[data-theme="light"] .sheet,
+:root[data-theme="light"] .tutorial-card {
+  background: #f4f8f9 !important;
+  box-shadow: 0 3px 10px rgba(55, 77, 111, .10) !important;
+}
+
+.map-node-center .map-node-tile {
+  background: #2a3448 !important;
+}
+:root[data-theme="light"] .map-node-center .map-node-tile {
+  background: #e7edf2 !important;
+}
