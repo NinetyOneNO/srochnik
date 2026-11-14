@@ -4221,14 +4221,16 @@ body {
 .activity-dock { display: flex; justify-content: center; }
 .activity-dock .status-line {
   display: inline-grid;
-  grid-template-columns: auto minmax(0, max-content) max-content;
+  grid-template-columns: max-content max-content;
   gap: 3px 5px;
   width: max-content;
   max-width: 100%;
   padding: 7px 10px;
   box-sizing: border-box;
-  justify-items: start;
+  justify-items: center;
+  text-align: center;
 }
+.activity-dock .status-indicator { display: none; }
 .activity-dock .status-line b { flex: none; }
 .activity-dock .status-details {
   grid-column: 1 / -1;
@@ -4237,8 +4239,20 @@ body {
   overflow-wrap: anywhere;
   width: max-content;
   max-width: 100%;
-  justify-self: start;
-  text-align: left;
+  justify-self: center;
+  text-align: center;
+}
+
+/* Финальное выравнивание активного занятия. */
+.activity-dock .status-line {
+  grid-template-columns: max-content max-content !important;
+  justify-items: center !important;
+  text-align: center !important;
+}
+.activity-dock .status-line .status-indicator { display: none !important; }
+.activity-dock .status-line .status-details {
+  justify-self: center !important;
+  text-align: center !important;
 }
 @media (max-width: 430px) {
   .activity-dock .status-line { grid-template-columns: minmax(0, max-content) max-content; }
