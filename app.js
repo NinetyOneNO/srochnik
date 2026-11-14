@@ -3371,6 +3371,7 @@ function setTab(tab) {
 let lastCareKey = '';
 let lastPackageState = '';
 let lastMapBusyKey = '';
+let gameTickTimer = 0;
 
 function updateCareLive() {
   const pkg = packageState();
@@ -3391,6 +3392,9 @@ function updateCareLive() {
 }
 
 function tick() {
+  // В фоне телефон может замораживать таймеры и дорого перерисовывать DOM.
+  // При возвращении visibilitychange вызывает tick() с актуальным временем.
+  if (document.hidden) return;
   const now = Date.now();
   let changed = false;
 
@@ -3487,6 +3491,17 @@ function tick() {
 
 }
 
+function scheduleGameTick() {
+  clearTimeout(gameTickTimer);
+  if (document.hidden) return;
+  const active = Boolean(state.busy?.id);
+  const actionsOpen = $('[data-panel="actions"]')?.classList.contains('is-active');
+  gameTickTimer = window.setTimeout(() => {
+    tick();
+    scheduleGameTick();
+  }, active || actionsOpen ? 1000 : 5000);
+}
+
 /* ---------- boot ---------- */
 
 function initTelegram() {
@@ -3525,8 +3540,9 @@ function bindMapZoom() {
   let pinch = null;
   let drag = null;
   let suppressClickUntil = 0;
+  let applyFrame = 0;
 
-  function apply() {
+  function applyNow() {
     // Zoom меняет размеры при раскладке, а не растягивает закэшированный растр.
     // Это сохраняет чёткость текста и значков после окончания жеста.
     content.style.zoom = String(scale);
@@ -3538,6 +3554,16 @@ function bindMapZoom() {
     const changed = Math.abs(scale - 1) > .001 || Math.abs(x) > .5 || Math.abs(y) > .5;
     resetButton?.classList.toggle('is-changed', changed);
     if (resetLabel) resetLabel.setAttribute('aria-hidden', String(!changed));
+  }
+
+  // Жесты могут приходить чаще частоты экрана. Объединяем несколько
+  // изменений в один layout/paint, чтобы не перегружать мобильный браузер.
+  function apply() {
+    if (applyFrame) return;
+    applyFrame = requestAnimationFrame(() => {
+      applyFrame = 0;
+      applyNow();
+    });
   }
 
   function zoomAt(next, clientX, clientY) {
@@ -3915,11 +3941,13 @@ function bindEvents() {
       tick();
       renderStatusLine();
       refreshCloud();
+      scheduleGameTick();
     }
   });
   window.addEventListener('pageshow', () => {
     tick();
     renderStatusLine();
+    scheduleGameTick();
   });
 }
 
@@ -3940,7 +3968,7 @@ async function boot() {
   save();
 
 
-  window.setInterval(tick, 1000);
+  scheduleGameTick();
   window.setInterval(() => { if (!document.hidden) refreshCloud(); }, 15000);
   window.setInterval(() => { if (!document.hidden && cloudReady) refreshLeaderboard(); }, 60000);
   if (!state.nameChosen) openModal((el) => renderNameSheet(el, true));
