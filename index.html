@@ -3,10 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0d0f0b" />
+  <meta name="theme-color" content="#0a0c12" />
   <title>СРОЧНИК — армейская сага</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="styles.css?v=15" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Unbounded:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=56" />
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
@@ -14,49 +17,108 @@
   <div class="app">
     <header class="topbar">
       <div class="topbar-main">
-        <div class="brand">
+        <button class="brand profile-chip" id="profileTop" aria-label="Открыть профиль бойца">
           <div class="brand-mark">🪖</div>
           <div class="brand-text">
-            <div class="brand-title">СРОЧНИК</div>
-            <div class="brand-sub">армейская сага · β</div>
+            <div class="brand-title" id="topName">Срочник</div>
+            <div class="brand-sub" id="topLevel">F</div>
           </div>
-        </div>
+        </button>
+        <div class="resource-chip">
         <button class="shop-chip" id="shopBtn" aria-label="Открыть чипок">
           <span class="shop-chip-icon">💰</span>
           <span class="shop-chip-money" id="moneyTop">120 ₽</span>
         </button>
-      </div>
-      <div class="topbar-status">
-        <span class="rank-badge rank-mini" id="rankBadgeTop">📚 Курсант</span>
-        <span class="lvl-chip" id="lvlChipTop">📚 Учебка · 1/30</span>
-        <div class="energy-inline" title="Энергия восстанавливается каждые 3 минуты 36 секунд">
-          <span class="energy-inline-icon" aria-hidden="true">⚡</span>
-          <div class="bar"><i class="fill energy" id="energyBar"></i></div>
-          <b id="energyVal">100</b>
+        <div class="energy-popover-wrap"><button class="energy-inline" id="energyDetailsBtn" type="button" aria-label="Восстановление энергии" aria-expanded="false" aria-controls="energyPopover"><span class="energy-inline-icon" aria-hidden="true">⚡</span><b id="energyVal">100</b><span class="bar"><i class="fill energy" id="energyBar"></i></span></button><div class="energy-popover" id="energyPopover" role="status" hidden></div></div>
         </div>
       </div>
-      <div class="status-line" aria-live="polite">
+      <button class="status-line" id="activityTop" type="button" aria-label="Открыть казарму" aria-live="polite">
         <span class="status-indicator" aria-hidden="true"></span>
-        <b id="statusText">Служба идёт · свободен</b>
-        <span id="statusTime">⚡ +1 за 3:36</span>
-        <div class="status-track"><i id="statusProgress"></i></div>
-      </div>
+        <b id="statusText">Свободен</b>
+        <span id="statusTime"></span>
+        <span class="status-track"><i id="statusProgress"></i></span>
+      </button>
     </header>
 
     <main class="layout">
+      <!-- ================= КАРТА ЧАСТИ ================= -->
+      <section class="panel map-panel is-active" data-panel="map" aria-label="Расположение части">
+        <div class="map-head">
+          <div class="map-controls"><button class="map-help map-reset" id="mapResetZoom" aria-label="Вернуть исходный масштаб и положение карты" title="На исходную"><span aria-hidden="true">⟲</span><span class="map-reset-label" id="mapResetLabel" aria-hidden="true">На исходную</span></button><button class="map-help" id="mapTutorialBtn" aria-label="Как играть">?</button></div>
+        </div>
+
+        <div class="map-stage" id="mapStage">
+          <div class="map-zoom-content" id="mapZoomContent">
+          <div class="map-stars" aria-hidden="true"></div>
+          <svg class="map-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <circle class="map-orbit" cx="50" cy="50" r="33"></circle>
+            <line class="map-line" x1="50" y1="50" x2="50" y2="16"></line>
+            <line class="map-line" x1="50" y1="50" x2="80" y2="34"></line>
+            <line class="map-line" x1="50" y1="50" x2="80" y2="66"></line>
+            <line class="map-line" x1="50" y1="50" x2="50" y2="82"></line>
+            <line class="map-line" x1="50" y1="50" x2="20" y2="66"></line>
+            <line class="map-line" x1="50" y1="50" x2="20" y2="34"></line>
+          </svg>
+
+          <button class="map-node map-node-center" data-building="actions" aria-label="Войти в казарму">
+            <span class="map-node-tile" aria-hidden="true">🏛️</span>
+              <span class="map-node-pill"><b>Казарма</b><small id="mapCentralNote"></small></span>
+          </button>
+
+          <button class="map-node map-node-plaz" data-building="plaz" aria-label="Плац">
+            <span class="map-node-tile" aria-hidden="true">🚩</span>
+            <span class="map-node-pill"><b>Плац</b><small id="mapStatusPlaz"></small></span>
+          </button>
+
+          <button class="map-node map-node-kpp" data-building="kpp" aria-label="КПП">
+            <span class="map-node-tile" aria-hidden="true">🛂</span>
+            <span class="map-node-pill"><b>КПП</b><small id="mapStatusKpp"></small></span>
+          </button>
+
+          <button class="map-node map-node-canteen" data-building="canteen" aria-label="Столовая">
+            <span class="map-node-tile" aria-hidden="true">🍲</span>
+            <span class="map-node-pill"><b>Столовая</b><small id="mapStatusCanteen"></small></span>
+          </button>
+
+          <button class="map-node map-node-shop" data-building="shop" aria-label="Чипок">
+            <span class="map-node-tile" aria-hidden="true">🛒</span>
+            <span class="map-node-pill"><b>Чипок</b><small id="mapStatusShop"></small></span>
+          </button>
+
+          <button class="map-node map-node-sickbay" data-building="sickbay" aria-label="Санчасть">
+            <span class="map-node-tile" aria-hidden="true">🏥</span>
+            <span class="map-node-pill"><b>Санчасть</b><small id="mapStatusSickbay"></small></span>
+          </button>
+
+          <button class="map-node map-node-staff" data-building="staff" aria-label="Штаб">
+            <span class="map-node-tile" aria-hidden="true">🗂️</span>
+            <span class="map-node-pill"><b>Штаб</b><small id="mapStatusStaff"></small></span>
+          </button>
+          </div>
+        </div>
+
+        <p class="map-hint"><span class="map-hint-dot" aria-hidden="true"></span> Нажми на здание, чтобы войти</p>
+      </section>
+
+      <!-- ================= БОЕЦ ================= -->
       <section class="panel hero-panel" data-panel="hero" aria-label="Боец">
+        <div class="panel-top">
+          <button class="panel-back" data-back>← Гарнизон</button>
+          <span class="live-chip"><i></i> личное дело</span>
+        </div>
+
         <article class="hero-card">
           <div class="hero-top">
             <div class="avatar" aria-hidden="true">🪖<span class="avatar-star">★</span></div>
             <div class="hero-id">
               <div class="eyebrow">личное дело</div>
-              <h1 id="heroName">Срочник</h1>
+              <h1><span id="heroName">Срочник</span> <button class="name-edit" id="editNameBtn" aria-label="Изменить ник">✎</button></h1>
               <div class="rank-row">
-                <span class="rank-badge" id="rankBadge">📚 Курсант</span>
-                <span class="lvl-chip" id="lvlChip">📚 Учебка · 1/30</span>
+                <button class="rank-badge level-button" id="rankBadge" type="button">F</button>
               </div>
             </div>
           </div>
+          <div class="hero-buffs" id="heroBuffs"></div>
 
           <div class="stat-block">
             <div class="row-label"><span>Опыт службы</span><span id="xpLabel">0 / 400 XP</span></div>
@@ -65,7 +127,7 @@
 
           <div class="stats">
             <div class="stat">
-              <div class="row-label"><span>❤️ Здоровье</span><b id="hpVal">100</b></div>
+              <div class="row-label"><button class="stat-detail-btn" id="healthDetailsBtn" type="button">❤️ Здоровье</button><b id="hpVal">100</b></div>
               <div class="bar"><i class="fill hp" id="hpBar"></i></div>
               <div class="micro" id="hpHint">+1 каждые 3:36</div>
             </div>
@@ -77,9 +139,7 @@
           </div>
 
           <div class="hero-meta">
-            <div class="meta-cell"><span>До дембеля</span><b id="daysLeft">365 дней</b></div>
             <div class="meta-cell"><span>В нарядах</span><b id="dutyCount">0</b></div>
-            <div class="meta-cell"><span>Период службы</span><b id="periodMeta">📚 Учебка</b></div>
             <div class="meta-cell"><span>Стрик входов</span><b id="streakMeta">0 дней</b></div>
           </div>
 
@@ -93,14 +153,163 @@
           </div>
           <ul class="daily-list" id="dailyList"></ul>
         </article>
+        <article class="card daily-card"><div class="card-head"><h2>Ежедневные награды</h2></div><div id="loginCalendar"></div><button class="btn btn-primary" id="claimLoginReward">Забрать награду</button></article>
 
+        <div class="hero-footer">
+          <span class="hint-text">Прогресс сохраняется на этом устройстве</span>
+        </div>
+      </section>
+
+      <!-- ================= КАЗАРМА ================= -->
+      <section class="panel actions-panel" data-panel="actions" aria-label="Казарма">
+        <div class="panel-top">
+          <button class="panel-back" data-back>← Гарнизон</button>
+          <span class="live-chip"><i></i> служба идёт</span>
+        </div>
+        <div class="panel-head">
+          <div>
+            <h2>Казарма</h2>
+            <p class="panel-sub">Игровой день — 12 часов. Занятия тратят энергию и занимают время.</p>
+          </div>
+        </div>
+        <div class="location-filters" id="locationFilters" aria-label="Фильтр по расположению"></div>
+        <div class="duty-picker" id="dutyPicker"></div>
+        <div class="duty-options duty-location-grid" id="dutyOptions"></div>
+        <p class="filter-empty" id="filterEmpty" hidden>Для этого расположения нет занятий в казарме.</p>
+        <div class="action-grid" id="actionGrid"></div>
+        <p class="tip">💡 Пока идёт одно занятие, остальные недоступны. Звонок маме — лучший способ поднять боевой дух.</p>
+      </section>
+
+      <!-- ================= ЧИПОК ================= -->
+      <section class="panel shop-panel" data-panel="shop" aria-label="Чипок">
+        <div class="panel-top">
+          <button class="panel-back" data-back>← Гарнизон</button>
+          <span class="live-chip"><i></i> открыто</span>
+        </div>
+        <div class="panel-head">
+          <div>
+            <h2>Чипок</h2>
+            <p class="panel-sub">Всё для бойца. Дорого, но по-дружески.</p>
+          </div>
+        </div>
+        <div class="action-grid" id="shopGrid"></div>
+        <div class="card shop-card">
+          <div class="wallet">
+            <span>💰 В кармане</span>
+            <b id="shopMoney">120 ₽</b>
+          </div>
+          <ul class="shop-list" id="shopList"></ul>
+          <p class="shop-note" id="shopNote">Поход восстанавливается за 30 минут. Апгрейды не тратят походы.</p>
+        </div>
+      </section>
+
+      <!-- ================= ПЛАЦ ================= -->
+      <section class="panel" data-panel="plaz" aria-label="Плац">
+        <div class="panel-top">
+          <button class="panel-back" data-back>← Гарнизон</button>
+          <span class="live-chip"><i></i> под открытым небом</span>
+        </div>
+        <div class="banner banner-plaz">
+          <span class="banner-icon" aria-hidden="true">🚩</span>
+          <div class="banner-copy">
+            <span class="banner-kicker">строевая площадка</span>
+            <h2>Плац</h2>
+            <p>Зарядка, строевая и порядок на территории. Здесь куётся выправка.</p>
+          </div>
+        </div>
+        <div class="action-grid" id="plazGrid"></div>
+        <p class="tip">💡 Строевая даёт больше опыта, а помощь прапорщику — деньги и уважение.</p>
+      </section>
+
+      <!-- ================= КПП ================= -->
+      <section class="panel" data-panel="kpp" aria-label="КПП">
+        <div class="panel-top">
+          <button class="panel-back" data-back>← Гарнизон</button>
+          <span class="live-chip"><i></i> пост охраны</span>
+        </div>
+        <div class="banner banner-kpp">
+          <span class="banner-icon" aria-hidden="true">🛂</span>
+          <div class="banner-copy">
+            <span class="banner-kicker">контрольно-пропускной пункт</span>
+            <h2>КПП</h2>
+            <p>Пропуска, караул и бдительность. Стоять на воротах — целая наука.</p>
+          </div>
+        </div>
+          <div class="action-grid" id="kppGrid"></div>
+          <article class="card care-card building-care"><ul class="care-list" id="kppCareList"></ul></article>
+        <p class="tip">💡 Караул приносит больше денег, но отнимает энергию и боевой дух.</p>
+      </section>
+
+      <!-- ================= СТОЛОВАЯ ================= -->
+      <section class="panel" data-panel="canteen" aria-label="Столовая">
+        <div class="panel-top">
+          <button class="panel-back" data-back>← Гарнизон</button>
+          <span class="live-chip"><i></i> по распорядку</span>
+        </div>
+        <div class="banner banner-canteen">
+          <span class="banner-icon" aria-hidden="true">🍲</span>
+          <div class="banner-copy">
+            <span class="banner-kicker">пункт питания</span>
+            <h2>Столовая</h2>
+            <p>Наряд на кухню, горячий обед и перекус, который держит на ногах.</p>
+          </div>
+        </div>
+        <div class="action-grid" id="canteenGrid"></div>
+        <article class="card shop-card canteen-card">
+          <div class="card-head">
+            <h2>Меню</h2>
+            <span class="card-note">еда и напитки</span>
+          </div>
+          <div class="wallet canteen-wallet">
+            <span>💰 В кармане</span>
+            <b id="canteenMoney">120 ₽</b>
+          </div>
+          <ul class="shop-list" id="canteenMenu"></ul>
+          <p class="shop-note">Еда и напитки без ограничений по походам.</p>
+        </article>
+        <p class="tip">💡 Голодный боец хуже соображает: следи за энергией и боевым духом.</p>
+      </section>
+
+      <!-- ================= САНЧАСТЬ ================= -->
+      <section class="panel" data-panel="sickbay" aria-label="Санчасть">
+        <div class="panel-top">
+          <button class="panel-back" data-back>← Гарнизон</button>
+          <span class="live-chip"><i></i> медпункт</span>
+        </div>
+        <div class="banner banner-sickbay">
+          <span class="banner-icon" aria-hidden="true">🏥</span>
+          <div class="banner-copy">
+            <span class="banner-kicker">медицинский пункт</span>
+            <h2>Санчасть</h2>
+            <p>Перевязка, таблетка и освобождение от строевой. А ещё — посылки и увольнительные.</p>
+          </div>
+        </div>
+        <div class="action-grid" id="sickbayGrid"></div>
         <article class="card care-card">
           <div class="card-head">
-            <h2>Быт</h2>
-            <span class="card-note">посылка · санчасть · увольнительная</span>
+            <h2>Медпункт и быт</h2>
+            <span class="card-note">лечение и расходники</span>
           </div>
           <ul class="care-list" id="careList"></ul>
+          <ul class="shop-list health-list" id="healthList"></ul>
         </article>
+      </section>
+
+      <!-- ================= ШТАБ ================= -->
+      <section class="panel" data-panel="staff" aria-label="Штаб">
+        <div class="panel-top">
+          <button class="panel-back" data-back>← Гарнизон</button>
+          <span class="live-chip"><i></i> документы</span>
+        </div>
+        <div class="banner banner-staff">
+          <span class="banner-icon" aria-hidden="true">🗂️</span>
+          <div class="banner-copy">
+            <span class="banner-kicker">канцелярия части</span>
+            <h2>Штаб</h2>
+            <p>Рейтинг, достижения и поручения прапорщика.</p>
+          </div>
+        </div>
+        <div class="action-grid" id="staffGrid"></div>
 
         <article class="card quest-card">
           <div class="card-head">
@@ -112,20 +321,9 @@
         </article>
 
         <article class="card staff-card" id="staffCard">
-          <div class="card-head">
-            <h2>Штаб</h2>
-            <span class="card-note">локально</span>
-          </div>
+          <div class="card-head"><h2>Разделы штаба</h2><span class="card-note">выбери раздел</span></div>
           <div class="staff-grid">
-            <button class="staff-btn staff-wide" id="contractBtn">
-              <span class="staff-icon" aria-hidden="true">📄</span>
-              <span class="staff-body">
-                <b id="contractTitle">Контракт</b>
-                <small id="contractNote">Доступен после половины службы</small>
-              </span>
-              <span class="staff-arrow" id="contractArrow" aria-hidden="true">🔒</span>
-            </button>
-            <button class="staff-btn" id="leaderboardBtn">
+            <button class="staff-btn is-selected" id="leaderboardBtn">
               <span class="staff-icon" aria-hidden="true">🏆</span>
               <span class="staff-body">
                 <b>Рейтинг</b>
@@ -148,66 +346,54 @@
               <span class="staff-arrow" aria-hidden="true">→</span>
             </button>
           </div>
+          <div class="staff-tab-content" id="staffTabContent"></div>
         </article>
-
-        <div class="hero-footer">
-          <span class="hint-text">Прогресс сохраняется на этом устройстве</span>
-        </div>
       </section>
 
-      <section class="panel actions-panel is-active" data-panel="actions" aria-label="Казарма">
-        <div class="panel-head">
-          <div>
-            <h2>Казарма</h2>
-          <p class="panel-sub">Игровой день — 12 часов. Занятия тратят энергию и занимают время.</p>
-          </div>
-          <span class="live-chip"><i></i> служба идёт</span>
-        </div>
-        <div class="duty-picker" id="dutyPicker"></div>
-        <div class="action-grid" id="actionGrid"></div>
-        <p class="tip">💡 Пока идёт одно занятие, остальные недоступны. Звонок маме — лучший способ поднять боевой дух.</p>
+      <!-- ================= ИНВЕНТАРЬ ================= -->
+      <section class="panel inventory-panel" data-panel="inventory" aria-label="Инвентарь">
+        <div class="panel-top"><button class="panel-back" data-back>← Гарнизон</button></div>
+        <div class="panel-head"><h2>Инвентарь</h2></div>
+        <article class="card inventory-card">
+          <div class="inventory-tabs" id="inventoryTabs"><button type="button" data-inventory-tab="consumable">Расходные</button><button type="button" data-inventory-tab="permanent">Постоянные</button></div>
+          <div class="inventory-filters" id="inventoryFilters"></div>
+          <div id="inventoryList"></div>
+        </article>
       </section>
 
-      <section class="panel shop-panel" data-panel="shop" aria-label="Чипок">
-        <div class="panel-head">
-          <div>
-            <h2>Чипок</h2>
-            <p class="panel-sub">Всё для бойца. Дорого, но по-дружески.</p>
-          </div>
-          <span class="live-chip"><i></i> открыто</span>
-        </div>
-        <div class="card shop-card">
-          <div class="wallet">
-            <span>💰 В кармане</span>
-            <b id="shopMoney">120 ₽</b>
-          </div>
-          <div class="trips" id="shopTrips">Походы: 3 из 3</div>
-          <div class="trips speed-line" id="shopSpeed">Скорость занятий: ×3</div>
-          <ul class="shop-list" id="shopList"></ul>
-          <p class="shop-note" id="shopNote">Поход восстанавливается за 30 минут. Апгрейды не тратят походы.</p>
-        </div>
-      </section>
-
+      <!-- ================= СОБЫТИЯ ================= -->
       <section class="panel log-panel" data-panel="log" aria-label="События">
+        <div class="panel-top">
+          <button class="panel-back" data-back>← Гарнизон</button>
+          <span class="live-chip"><i></i> live</span>
+        </div>
         <article class="card log-card">
           <div class="card-head">
             <h2>События</h2>
-            <span class="live-chip"><i></i> live</span>
+            <span class="card-note">журнал службы</span>
           </div>
-          <ul class="log" id="log" aria-live="polite"></ul>
-          <p class="log-tip">Каждое действие может обернуться неожиданностью 😉</p>
+          <div class="log-scroll" id="logScroll" tabindex="0" aria-label="История событий"><ul class="log" id="log" aria-live="polite"></ul><button class="settings-action log-more" id="logMore" type="button" hidden>Больше</button></div>
         </article>
       </section>
 
+      <!-- ================= НАСТРОЙКИ ================= -->
       <section class="panel settings-panel" data-panel="settings" aria-label="Настройки">
+        <div class="panel-top">
+          <button class="panel-back" data-back>← Гарнизон</button>
+          <span class="live-chip">⚙️ профиль</span>
+        </div>
         <div class="panel-head">
           <div>
             <h2>Настройки</h2>
             <p class="panel-sub">Звук, уведомления и обучение</p>
           </div>
-          <span class="live-chip">⚙️ профиль</span>
         </div>
         <div class="card settings-card">
+          <div class="setting-row">
+            <span class="setting-icon">🎨</span>
+            <span class="setting-copy"><b>Тема</b><small>Оформление игры</small></span>
+            <div class="theme-choice" role="group" aria-label="Тема оформления"><button type="button" data-theme-choice="dark" aria-pressed="true">Тёмная</button><button type="button" data-theme-choice="light" aria-pressed="false">Светлая</button></div>
+          </div>
           <div class="setting-row">
             <span class="setting-icon">🔊</span>
             <span class="setting-copy"><b>Звуки</b><small>Клики, награды и достижения</small></span>
@@ -229,6 +415,11 @@
             <button class="settings-action" id="cloudSaveBtn">Сохранить</button>
           </div>
           <div class="setting-row">
+            <span class="setting-icon">🧹</span>
+            <span class="setting-copy"><b>Очистить старые события</b><small>Удалить локальный архив старше 24 часов, не затрагивая прогресс</small></span>
+            <button class="settings-action" id="clearArchiveBtn">Очистить</button>
+          </div>
+          <div class="setting-row">
             <span class="setting-icon">🔄</span>
             <span class="setting-copy"><b>Новая служба</b><small>Удалить локальный прогресс</small></span>
             <button class="settings-action is-danger" id="settingsReset">Сбросить</button>
@@ -245,8 +436,8 @@
   </div>
 
   <nav class="bottom-nav" aria-label="Навигация">
-    <button class="nav-btn is-active" data-tab="actions"><span class="nav-icon">🏛️</span><span>Казарма</span></button>
-    <button class="nav-btn" data-tab="shop"><span class="nav-icon">🛒</span><span>Чипок</span></button>
+    <button class="nav-btn is-active" data-tab="map"><span class="nav-icon">🗺️</span><span>Гарнизон</span></button>
+    <button class="nav-btn" data-tab="inventory"><span class="nav-icon">🎒</span><span>Инвентарь</span></button>
     <button class="nav-btn" data-tab="hero"><span class="nav-icon">👤</span><span>Боец</span></button>
     <button class="nav-btn" data-tab="log"><span class="nav-icon">📜</span><span>События</span></button>
     <button class="nav-btn" data-tab="settings"><span class="nav-icon">⚙️</span><span>Настройки</span></button>
@@ -289,6 +480,6 @@
     <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
   </div>
 
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=200"></script>
 </body>
 </html>

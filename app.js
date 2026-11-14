@@ -3,20 +3,17 @@
 
 'use strict';
 
-const SAVE_KEY = 'srochnik.save.v1';
+// Версия 2 использует отдельное локальное сохранение и не импортирует прогресс v1.
+const SAVE_KEY = 'srochnik.save.v2';
 const HOUR_MS = 3600000;
 const ENERGY_MS = 216000; // 3 минуты 36 секунд на +1 энергии
 const HP_MS = 216000; // здоровье восстанавливается так же
 const EVENT_CHANCE = 0.16;
-const MAX_LOG = 40;
+const LOG_RETENTION_MS = 24 * HOUR_MS;
 const SERVICE_DAYS = 365;
 const DAY_MS = 12 * HOUR_MS; // игровой день длится 12 реальных часов
-const CONTRACT_DAY = 182; // половина службы
-const CONTRACT_RANK = 3; // младший сержант
 const PACKAGE_DELAY_MS = 2 * HOUR_MS;
 const LEAVE_COOLDOWN_MS = 7 * DAY_MS;
-const SHOP_MAX_TRIPS = 3;
-const SHOP_TRIP_MS = 30 * 60 * 1000; // +1 поход каждые 30 минут
 const ACTIVITY_BASE_SPEED = 3; // базовое ускорение занятий в 3 раза
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -197,10 +194,10 @@ async function toggleNotifications() {
 /* ---------- first-run tutorial ---------- */
 
 const TUTORIAL_STEPS = [
-  { icon: '🏛️', title: 'Казарма', text: 'Выбирай занятие. Оно занимает указанное время, а пока идёт — другие занятия подождут. Энергия постепенно восстанавливается даже во время службы.' },
-  { icon: '⚡', title: 'Время и ресурсы', text: 'Игровой день длится 12 часов. По 1 энергии и здоровью возвращается каждые 3 минуты 36 секунд. Следи за балансом и выбирай занятия по силам.' },
-  { icon: '🛒', title: 'Чипок', text: 'Есть 3 похода за расходниками. Один поход восстанавливается каждые 30 минут. Постоянные апгрейды казармы можно покупать независимо от походов.' },
-  { icon: '🎖️', title: 'Служба и настройки', text: 'Выполняй задания и поручения прапорщика, забирай награды и расти в звании. В «Настройках» можно включить звук, уведомления и пройти это обучение ещё раз.' }
+  { icon: '🗺️', title: 'Гарнизон', text: 'Выбери здание на карте, чтобы войти. В Казарме собраны занятия со всей части — воспользуйся фильтрами, чтобы найти нужное.' },
+  { icon: '⏱️', title: 'Занятия', text: 'Выбери занятие и дождись его завершения — тогда получишь награду. Одновременно можно выполнять только одно занятие.' },
+  { icon: '🎒', title: 'Припасы', text: 'Следи за энергией и здоровьем. Купленные еда и лекарства попадают в инвентарь — используй их, когда понадобятся.' },
+  { icon: '🎖️', title: 'Твой путь', text: 'Выполняй задания, собирай ежедневные награды и повышай ранг. Следить за прогрессом можно во вкладке «Боец», а за достижениями и рейтингом — в Штабе.' }
 ];
 let tutorialIndex = 0;
 
@@ -246,20 +243,34 @@ function closeTutorial() {
 /* ---------- game data ---------- */
 
 const RANKS = [
-  { xp: 0, title: 'Курсант', emoji: '📚' },
-  { xp: 300, title: 'Рядовой', emoji: '🪖' },
-  { xp: 900, title: 'Ефрейтор', emoji: '🎖️' },
-  { xp: 1800, title: 'Младший сержант', emoji: '🎖️' },
-  { xp: 3000, title: 'Сержант', emoji: '🥇', contract: true },
-  { xp: 4500, title: 'Старший сержант', emoji: '🏅', contract: true }
+  { xp: 0, title: 'F', emoji: '⚪' },
+  { xp: 300, title: 'E', emoji: '🔵' },
+  { xp: 900, title: 'D', emoji: '🟢' },
+  { xp: 1800, title: 'C', emoji: '🟡' },
+  { xp: 3000, title: 'B', emoji: '🟠' },
+  { xp: 4500, title: 'A', emoji: '🔴' },
+  { xp: 6500, title: 'S', emoji: '💎' }
 ];
 
-const PERIODS = [
-  { id: 'training', title: 'Учебка', emoji: '📚', from: 0, to: 29, note: 'курс молодого бойца' },
-  { id: 'young', title: 'Молодой', emoji: '🪖', from: 30, to: 181, note: 'служба идёт' },
-  { id: 'chepak', title: 'Черпак', emoji: '🥄', from: 182, to: 264, note: 'половина позади' },
-  { id: 'ded', title: 'Дед', emoji: '🧔', from: 265, to: 364, note: 'дембель близко' },
-  { id: 'demob', title: 'Дембель', emoji: '😎', from: 365, to: Infinity, note: 'служба окончена' }
+// Бонусы накопительные: процент сокращает время начальных занятий.
+const LEVEL_BONUSES = [0, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45];
+const ACTION_LEVELS = { help: 3, guard: 3, mentor: 4, demobAccord: 5 };
+const ACTION_HEALTH_COST = { charge: 4, drill: 5, duty: 6, help: 5, guard: 9, mentor: 3, demobAccord: 12, patrol: 4, deliverFood: 4, unload: 5, dispatch: 2 };
+const STARTER_ACTIONS = new Set(['charge', 'drill', 'call', 'duty']);
+// Разделы фильтра соответствуют зданиям на карте; пустые разделы не скрыты.
+const LOCATIONS = [
+  { id: 'actions', title: 'Казарма', icon: '🏛️', actions: ['call', 'mentor', 'demobAccord'], duties: ['sklad'] },
+  { id: 'plaz', title: 'Плац', icon: '🚩', actions: ['charge', 'drill', 'help'], duties: ['plaz'] },
+  { id: 'kpp', title: 'КПП', icon: '🛂', actions: ['guard', 'patrol'], duties: ['kpp'] },
+  { id: 'canteen', title: 'Столовая', icon: '🍲', actions: ['serve', 'kitchenClean', 'deliverFood'], duties: ['kitchen'] },
+  { id: 'shop', title: 'Чипок', icon: '🛒', actions: ['shelf', 'stocktake', 'unload'], duties: [] },
+  { id: 'sickbay', title: 'Санчасть', icon: '🏥', actions: ['medSort', 'medClean', 'medHelp'], duties: [] },
+  { id: 'staff', title: 'Штаб', icon: '🗂️', actions: ['documents', 'dispatch', 'archive'], duties: [] }
+];
+const LOGIN_REWARDS = [
+  { money: 20 }, { item: 'pie', count: 1 }, { xp: 10 },
+  { item: 'medkit', count: 1 }, { money: 35 }, { item: 'energy', count: 1 },
+  { money: 50, xp: 20, item: 'choco', count: 1 }
 ];
 
 const DUTIES = {
@@ -267,8 +278,8 @@ const DUTIES = {
     icon: '🥔',
     title: 'Наряд на кухню',
     desc: 'Почистить картошку для роты',
-    money: [45, 75],
-    xp: [6, 10],
+    money: [50, 70],
+    xp: [20, 26],
     morale: -1,
     flavor: [
       'Три ведра картошки — и ни одной мозоли.',
@@ -280,8 +291,8 @@ const DUTIES = {
     icon: '🧹',
     title: 'Наряд по плацу',
     desc: 'Подмести плац от листьев',
-    money: [30, 50],
-    xp: [8, 12],
+    money: [45, 65],
+    xp: [21, 27],
     morale: 0,
     flavor: [
       'Плац блестит — даже командир заметил.',
@@ -293,8 +304,8 @@ const DUTIES = {
     icon: '🚧',
     title: 'Наряд на КПП',
     desc: 'Проверять пропуска и здороваться',
-    money: [60, 90],
-    xp: [10, 14],
+    money: [55, 80],
+    xp: [22, 29],
     morale: -2,
     flavor: [
       'Пропуска проверены, скука побеждена.',
@@ -306,8 +317,8 @@ const DUTIES = {
     icon: '📦',
     title: 'Наряд на складе',
     desc: 'Пересчитать имущество',
-    money: [40, 70],
-    xp: [7, 11],
+    money: [48, 68],
+    xp: [20, 26],
     morale: -1,
     flavor: [
       'Имущество сошлось. Почти.',
@@ -328,7 +339,6 @@ const ACTIONS = [
     money: [0, 0],
     morale: 2,
     hours: 1,
-    minPeriod: 0,
     flavor: [
       'Кросс сдан. Плац остался позади.',
       'Подтянулся двенадцать раз. Командир кивнул.',
@@ -345,7 +355,7 @@ const ACTIONS = [
     money: [0, 0],
     morale: 1,
     hours: 2,
-    minPeriod: 0,
+    baseMinutes: 30,
     flavor: [
       'Шаг чеканил так, что гул пошёл по плацу.',
       '«Раз-два, левой!» — и ты в идеальном строю.',
@@ -358,11 +368,11 @@ const ACTIONS = [
     title: 'Позвонить маме',
     desc: 'Рассказать, что всё хорошо',
     energy: 4,
-    xp: [5, 8],
+    xp: [2, 3],
     money: [0, 0],
-    morale: 16,
+    morale: 6,
     hours: 1,
-    minPeriod: 0,
+    baseMinutes: 5,
     flavor: [
       'Мама передала привет и посылку с печеньем.',
       '«Кушаешь ли ты там?» — спросила мама. Ты соврал: да.',
@@ -379,7 +389,6 @@ const ACTIONS = [
     money: [45, 80],
     morale: -1,
     hours: 3,
-    minPeriod: 0,
     duty: true,
     dynamic: true,
     flavor: [
@@ -398,7 +407,7 @@ const ACTIONS = [
     money: [35, 75],
     morale: 3,
     hours: 2,
-    minPeriod: 1,
+    baseMinutes: 30,
     flavor: [
       'Прапорщик остался доволен. Это редкость.',
       'Плац блестит, а в кармане звенит.',
@@ -409,13 +418,13 @@ const ACTIONS = [
     id: 'guard',
     icon: '🛡️',
     title: 'Караул',
-    desc: 'Четыре часа на посту, всё по уставу',
+    desc: 'Час на посту, всё по уставу',
     energy: 75,
     xp: [26, 36],
     money: [90, 140],
     morale: -3,
     hours: 4,
-    minPeriod: 1,
+    baseMinutes: 60,
     flavor: [
       'Смена прошла спокойно. Даже ворон не пролетел.',
       'На посту думал о доме. Время шло медленно.',
@@ -432,7 +441,6 @@ const ACTIONS = [
     money: [30, 60],
     morale: 4,
     hours: 3,
-    minPeriod: 3,
     flavor: [
       'Молодые слушают. Дед доволен.',
       'Показал, как правильно подшивать — и как не надо.',
@@ -442,21 +450,34 @@ const ACTIONS = [
   {
     id: 'demobAccord',
     icon: '🎒',
-    title: 'Дембельский аккорд',
-    desc: 'Последний большой рывок перед дембелем',
+    title: 'Большой наряд',
+    desc: 'Большое поручение для опытного бойца',
     energy: 95,
     xp: [70, 100],
     money: [220, 320],
     morale: 10,
     hours: 6,
     cooldownHours: 24,
-    minPeriod: 4,
     flavor: [
       'Сделал так, что рота запомнит надолго.',
       'Дембельский аккорд выполнен. Можно собирать чемодан.',
       'Последний рывок — и ни одного замечания.'
     ]
-  }
+  },
+  // Время задано в реальных минутах до бонусов; часы службы остаются игровыми.
+  { id: 'patrol', icon: '🔦', title: 'Обойти территорию', desc: 'Проверить периметр части', energy: 12, xp: [5, 7], money: [10, 16], morale: 0, hours: 0.5, baseMinutes: 10, flavor: ['Периметр осмотрен, замечаний нет.'] },
+  { id: 'serve', icon: '🥣', title: 'Раздать обед', desc: 'Помочь с раздачей', energy: 15, xp: [6, 9], money: [15, 24], morale: 1, hours: 1, baseMinutes: 15, flavor: ['Обед вовремя получил каждый.'] },
+  { id: 'kitchenClean', icon: '🧽', title: 'Убрать столовую', desc: 'Навести порядок после обеда', energy: 34, xp: [14, 19], money: [34, 48], morale: 0, hours: 2, baseMinutes: 45, flavor: ['Столы чистые, пол блестит.'] },
+  { id: 'deliverFood', icon: '📦', title: 'Доставить продукты', desc: 'Принести припасы на кухню', energy: 25, xp: [10, 14], money: [24, 35], morale: 0, hours: 1.5, baseMinutes: 30, flavor: ['Припасы доставлены на кухню.'] },
+  { id: 'shelf', icon: '🧃', title: 'Разложить товары', desc: 'Пополнить полки чипка', energy: 14, xp: [6, 9], money: [14, 22], morale: 0, hours: 1, baseMinutes: 15, flavor: ['На полках снова порядок.'] },
+  { id: 'stocktake', icon: '📝', title: 'Посчитать товары', desc: 'Помочь с учётом припасов', energy: 22, xp: [9, 13], money: [22, 32], morale: 0, hours: 1.5, baseMinutes: 30, flavor: ['Остатки пересчитаны и записаны.'] },
+  { id: 'unload', icon: '📦', title: 'Разгрузить поставку', desc: 'Принять коробки с товарами', energy: 34, xp: [14, 19], money: [35, 50], morale: 0, hours: 2, baseMinutes: 45, flavor: ['Поставка принята без потерь.'] },
+  { id: 'medSort', icon: '💊', title: 'Разобрать аптечку', desc: 'Проверить медицинские запасы', energy: 10, xp: [4, 7], money: [9, 15], morale: 0, hours: 0.5, baseMinutes: 10, flavor: ['В аптечке всё на своих местах.'] },
+  { id: 'medClean', icon: '🧼', title: 'Убрать медпункт', desc: 'Подготовить санчасть к приёму', energy: 30, xp: [14, 19], money: [30, 44], morale: 0, hours: 2, baseMinutes: 45, flavor: ['В медпункте чисто и спокойно.'] },
+  { id: 'medHelp', icon: '🩹', title: 'Помочь санинструктору', desc: 'Подготовить перевязочные материалы', energy: 17, xp: [8, 11], money: [16, 25], morale: 1, hours: 1, baseMinutes: 20, flavor: ['Перевязочные материалы готовы.'] },
+  { id: 'documents', icon: '📄', title: 'Разобрать документы', desc: 'Рассортировать бумаги штаба', energy: 12, xp: [7, 10], money: [12, 20], morale: 0, hours: 1, baseMinutes: 15, flavor: ['Документы разложены по папкам.'] },
+  { id: 'dispatch', icon: '✉️', title: 'Доставить донесение', desc: 'Передать документы по части', energy: 20, xp: [10, 14], money: [22, 32], morale: 0, hours: 1.5, baseMinutes: 30, flavor: ['Донесение доставлено адресату.'] },
+  { id: 'archive', icon: '🗃️', title: 'Навести порядок в архиве', desc: 'Сверить и убрать папки', energy: 30, xp: [15, 20], money: [32, 45], morale: 0, hours: 2, baseMinutes: 45, flavor: ['Архив приведён в порядок.'] }
 ];
 
 function dutyType() {
@@ -483,7 +504,8 @@ function activitySpeed() {
 }
 
 function activityDurationMs(action) {
-  const ms = action.hours * HOUR_MS / activitySpeed();
+  const bonus = STARTER_ACTIONS.has(action.id) ? LEVEL_BONUSES[rankIndexFor(state.xp)] : 0;
+  const ms = (action.baseMinutes ? action.baseMinutes * 60000 / (1 + activitySpeedBonus()) : action.hours * HOUR_MS / activitySpeed()) * (1 - bonus);
   return Math.max(60 * 1000, Math.round(ms));
 }
 
@@ -492,53 +514,53 @@ const SHOP = [
     id: 'pie',
     icon: '🥟',
     name: 'Пирожок с картошкой',
-    desc: '+20 энергии и +4 духа',
+    desc: '+10 энергии и +2 духа',
     price: 35,
     temporary: true,
     fullMsg: 'Сначала проголодайся',
     blocked: () => state.energy >= state.maxEnergy,
     apply: () => {
-      state.energy = Math.min(state.maxEnergy, state.energy + 20);
-      state.morale = clamp(state.morale + 4, 0, 100);
+      state.energy = Math.min(state.maxEnergy, state.energy + 10);
+      state.morale = clamp(state.morale + 2, 0, 100);
     }
   },
   {
     id: 'choco',
     icon: '🍫',
     name: 'Шоколадка «Алёнка»',
-    desc: '+15 боевого духа',
+    desc: '+8 боевого духа',
     price: 50,
     temporary: true,
     fullMsg: 'Дух и так боевой',
     blocked: () => state.morale >= 100,
     apply: () => {
-      state.morale = clamp(state.morale + 15, 0, 100);
+      state.morale = clamp(state.morale + 8, 0, 100);
     }
   },
   {
     id: 'energy',
     icon: '⚡',
     name: 'Энергетик «Дизель»',
-    desc: '+40 энергии',
+    desc: '+20 энергии',
     price: 65,
     temporary: true,
     fullMsg: 'Энергия и так на максимуме',
     blocked: () => state.energy >= state.maxEnergy,
     apply: () => {
-      state.energy = Math.min(state.maxEnergy, state.energy + 40);
+      state.energy = Math.min(state.maxEnergy, state.energy + 20);
     }
   },
   {
     id: 'medkit',
     icon: '💊',
     name: 'Бинт и йод',
-    desc: '+30 здоровья',
+    desc: '+15 здоровья',
     price: 75,
     temporary: true,
     fullMsg: 'Здоровье и так в порядке',
     blocked: () => state.hp >= state.maxHp,
     apply: () => {
-      state.hp = Math.min(state.maxHp, state.hp + 30);
+      state.hp = Math.min(state.maxHp, state.hp + 15);
     }
   },
   {
@@ -794,8 +816,8 @@ const QUESTS = [
   {
     id: 'efreitor',
     icon: '🎖️',
-    title: 'Стать ефрейтором',
-    desc: 'Звание Ефрейтор',
+    title: 'Достичь уровня D',
+    desc: 'Уровень D',
     reward: { money: 80, xp: 30 },
     check: () => rankIndexFor(state.xp, state.contract) >= 2
   },
@@ -818,18 +840,18 @@ const QUESTS = [
   {
     id: 'sergeant',
     icon: '🥇',
-    title: 'Стать сержантом',
-    desc: 'Подписать контракт и получить звание',
+    title: 'Достичь уровня B',
+    desc: 'Уровень B',
     reward: { money: 200, xp: 50 },
     check: () => rankIndexFor(state.xp, state.contract) >= 4
   },
   {
     id: 'demob',
     icon: '😎',
-    title: 'Дослужить до дембеля',
-    desc: '365 дней службы',
+    title: 'Достичь уровня S',
+    desc: 'Уровень S',
     reward: { money: 500 },
-    check: () => daysUntilDemob() <= 0
+    check: () => rankIndexFor(state.xp) >= 6
   }
 ];
 
@@ -927,26 +949,26 @@ const ACHIEVEMENTS = [
   {
     id: 'efreitor',
     icon: '🎖️',
-    title: 'Ефрейтор',
-    desc: 'Получить звание Ефрейтора',
+    title: 'Уровень D',
+    desc: 'Достичь уровня D',
     reward: { money: 30 },
     check: () => rankIndexFor(state.xp, state.contract) >= 2
   },
   {
     id: 'sergeant',
     icon: '🏅',
-    title: 'Старший сержант',
-    desc: 'Подписать контракт и дослужиться до старшего сержанта',
+    title: 'Уровень A',
+    desc: 'Достичь уровня A',
     reward: { money: 120 },
     check: () => rankIndexFor(state.xp, state.contract) >= 5
   },
   {
     id: 'demob',
     icon: '😎',
-    title: 'Дембель',
-    desc: 'Дослужить до дембеля — 365 дней',
+    title: 'Уровень S',
+    desc: 'Достичь уровня S',
     reward: { money: 300 },
-    check: () => daysUntilDemob() <= 0
+    check: () => rankIndexFor(state.xp) >= 6
   }
 ];
 
@@ -956,6 +978,7 @@ const ACHIEVEMENTS = [
 function defaultState() {
   const user = tgUser();
   return {
+    saveVersion: 2,
     name: user?.first_name?.trim() || 'Срочник',
     xp: 0,
     money: 120,
@@ -967,19 +990,21 @@ function defaultState() {
     cooldowns: {},
     busy: { id: null, title: '', icon: '', until: 0, startedAt: 0, totalMs: 0 },
     purchases: { boots: 0, pillow: 0, kettle: 0, locker: 0, laces: 0, watch: 0, planner: 0 },
-    shop: { charges: SHOP_MAX_TRIPS, lastAt: Date.now() },
-    duty: { date: gameDayKeyFrom(Date.now(), Date.now()), type: pick(Object.keys(DUTIES)) },
+    duty: { date: gameDayKeyFrom(Date.now(), Date.now()), type: 'kitchen' },
     package: { date: gameDayKeyFrom(Date.now(), Date.now()), sentAt: 0, readyAt: 0, claimed: false },
     leaveAt: 0,
     sickbay: { date: gameDayKeyFrom(Date.now(), Date.now()), used: false },
+    visitedToday: false,
     streak: { count: 0, lastDate: '' },
+    loginRewards: { lastClaimDate: '', count: 0 },
+    inventory: {},
     quest: { index: 0 },
     daily: {
       date: gameDayKeyFrom(Date.now(), Date.now()),
       progress: { hours: 0, earn: 0, call: 0 },
       done: {}
     },
-    settings: { sound: true, notify: false },
+    settings: { sound: true, notify: false, theme: 'dark' },
     tutorialSeen: false,
     timeVersion: 1,
     stats: {
@@ -997,6 +1022,7 @@ function defaultState() {
     achievements: {},
     demobSeen: false,
     contract: false,
+    nameChosen: false,
     log: [],
     lastEnergyAt: Date.now(),
     lastHpAt: Date.now(),
@@ -1010,6 +1036,7 @@ function loadState(rawOverride) {
     const raw = rawOverride === undefined ? localStorage.getItem(SAVE_KEY) : rawOverride;
     if (!raw) return base;
     const saved = JSON.parse(raw);
+    if (saved.saveVersion !== 2) return base;
     const savedBusy = saved.busy || {};
     const knownBusy = savedBusy.id ? ACTIONS.find((a) => a.id === savedBusy.id) : null;
     const merged = {
@@ -1031,7 +1058,8 @@ function loadState(rawOverride) {
         ? { ...saved.achievements }
         : {},
       demobSeen: Boolean(saved.demobSeen),
-      contract: Boolean(saved.contract),
+      contract: false,
+      nameChosen: saved.nameChosen === undefined ? true : Boolean(saved.nameChosen),
       purchases: { ...base.purchases, ...(saved.purchases || {}) },
       cooldowns: saved.cooldowns || {},
       busy: {
@@ -1040,11 +1068,9 @@ function loadState(rawOverride) {
         icon: savedBusy.icon || knownBusy?.icon || (savedBusy.id ? '⏳' : ''),
         until: Number(savedBusy.until) || 0,
         startedAt: Number(savedBusy.startedAt) || 0,
-        totalMs: Number(savedBusy.totalMs) || 0
-      },
-      shop: {
-        charges: clamp(Number(saved.shop?.charges ?? (SHOP_MAX_TRIPS - (saved.shopTrips?.used || 0))), 0, SHOP_MAX_TRIPS),
-        lastAt: Number(saved.shop?.lastAt) || Number(saved.shopTrips?.lastAt) || Date.now()
+        totalMs: Number(savedBusy.totalMs) || 0,
+        reward: savedBusy.reward || null,
+        rewardVersion: savedBusy.rewardVersion || 0
       },
       duty: {
         date: saved.duty?.date || base.duty.date,
@@ -1061,10 +1087,13 @@ function loadState(rawOverride) {
         date: saved.sickbay?.date || base.sickbay.date,
         used: Boolean(saved.sickbay?.used)
       },
+      visitedToday: Boolean(saved.visitedToday),
       streak: {
         count: Math.max(0, Number(saved.streak?.count) || 0),
         lastDate: saved.streak?.lastDate || ''
       },
+      loginRewards: { ...base.loginRewards, ...(saved.loginRewards || {}) },
+      inventory: { ...base.inventory, ...(saved.inventory || {}) },
       quest: {
         index: clamp(Number(saved.quest?.index) || 0, 0, QUESTS.length)
       },
@@ -1100,10 +1129,28 @@ function loadState(rawOverride) {
 
 const state = loadState();
 
+// Архив хранится отдельно на устройстве и никогда не отправляется в облако.
+const LOG_ARCHIVE_KEY = `${SAVE_KEY}.log-archive.${tgUser()?.id || 'local'}`;
+function readLogArchive() {
+  try { const value = JSON.parse(localStorage.getItem(LOG_ARCHIVE_KEY) || '[]'); return Array.isArray(value) ? value : []; }
+  catch { return []; }
+}
+function archiveOldEvents(entries, now = Date.now()) {
+  const old = entries.filter((entry) => Number(entry.t) > 0 && Number(entry.t) < now - LOG_RETENTION_MS);
+  if (!old.length) return true;
+  try {
+    const archive = readLogArchive();
+    const seen = new Set(archive.map((entry) => JSON.stringify(entry)));
+    old.forEach((entry) => { const key = JSON.stringify(entry); if (!seen.has(key)) { archive.push(entry); seen.add(key); } });
+    localStorage.setItem(LOG_ARCHIVE_KEY, JSON.stringify(archive));
+    return true;
+  } catch { return false; }
+}
+
 let saveTimer = null;
 let isResetting = false;
 const CLOUD_URL = 'https://kxuwpsfkjeyzsytclsys.supabase.co/functions/v1/telegram-save';
-const CLOUD_META_KEY = 'srochnik.cloud.meta.v1';
+const CLOUD_META_KEY = 'srochnik.cloud.meta.v2';
 let cloudRevision = null;
 let cloudReady = false;
 let cloudPending = false;
@@ -1149,8 +1196,10 @@ function showBanned() {
 }
 
 function adoptCloud(result, notify = false) {
+  archiveOldEvents(state.log);
   try { localStorage.setItem(SAVE_KEY + '.backup', JSON.stringify(state)); } catch { /* keep cloud copy */ }
   const loaded = loadState(JSON.stringify(result.data));
+  archiveOldEvents(loaded.log);
   Object.keys(state).forEach((key) => delete state[key]);
   Object.assign(state, loaded);
   cloudRevision = result.revision;
@@ -1245,6 +1294,7 @@ async function flushCloudSave() {
   cloudSaving = true;
   cloudPending = false;
   const snapshot = JSON.parse(JSON.stringify(state));
+  snapshot.log = snapshot.log.filter((entry) => Number(entry.t) >= Date.now() - LOG_RETENTION_MS);
   try {
     cloudStatus('Сохранение в аккаунт…');
     const result = await cloudRequest('save', snapshot, cloudRevision);
@@ -1282,14 +1332,17 @@ async function initializeCloud() {
     cloudStatus('Загрузка сохранения аккаунта…');
     const result = await cloudRequest('login');
     isAdmin = result.is_admin === true;
-    $('#adminRow').hidden = !isAdmin;
+    const adminRow = $('#adminRow');
+    if (adminRow) adminRow.hidden = !isAdmin;
     if (result.exists) {
       const useLocal = Boolean(localRaw && localMeta.user === user && localMeta.dirty && localMeta.revision === result.revision);
       if (localRaw && !useLocal && (!localMeta.user || localMeta.revision !== result.revision)) {
         try { localStorage.setItem(SAVE_KEY + '.backup', localRaw); } catch { /* preserve when possible */ }
       }
       if (!useLocal) {
+        archiveOldEvents(state.log);
         const loaded = loadState(JSON.stringify(result.data));
+        archiveOldEvents(loaded.log);
         Object.keys(state).forEach((key) => delete state[key]);
         Object.assign(state, loaded);
         try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
@@ -1357,7 +1410,6 @@ function applyOfflineRegen() {
     }
   }
 
-  refreshShopTrips(now);
 }
 
 /* ---------- derived values ---------- */
@@ -1366,47 +1418,26 @@ function daysServed() {
   return Math.max(0, Math.floor((Date.now() - state.startedAt) / DAY_MS));
 }
 
-function periodIndexForDay(day) {
-  for (let i = PERIODS.length - 1; i >= 0; i--) {
-    if (day >= PERIODS[i].from) return i;
-  }
-  return 0;
-}
-
-function currentPeriod() {
-  return PERIODS[periodIndexForDay(daysServed())];
-}
-
-function periodProgress() {
-  const day = daysServed();
-  const idx = periodIndexForDay(day);
-  const period = PERIODS[idx];
-  const length = period.to === Infinity ? 1 : period.to - period.from + 1;
-  const dayInPeriod = clamp(day - period.from + 1, 1, length);
-  return { day, idx, period, length, dayInPeriod };
-}
-
-function rankIndexFor(xp, contract = state.contract) {
+function rankIndexFor(xp) {
   let idx = 0;
   for (let i = 0; i < RANKS.length; i++) {
     if (xp >= RANKS[i].xp) idx = i;
   }
-  if (!contract && idx > CONTRACT_RANK) idx = CONTRACT_RANK;
   return idx;
 }
 
 function rankProgress() {
-  const idx = rankIndexFor(state.xp, state.contract);
+  const idx = rankIndexFor(state.xp);
   const rank = RANKS[idx];
   const next = RANKS[idx + 1] || null;
-  const capped = !state.contract && idx >= CONTRACT_RANK;
+  const capped = false;
   const into = state.xp - rank.xp;
   const span = next ? next.xp - rank.xp : 1;
 
   return {
     idx,
     rank,
-    next: capped ? null : next,
+    next,
     into,
     span,
     capped,
@@ -1422,43 +1453,6 @@ function rewardMultiplier() {
 
 function daysUntilDemob() {
   return Math.max(0, SERVICE_DAYS - daysServed());
-}
-
-function contractAvailable() {
-  return !state.contract && daysServed() >= CONTRACT_DAY && rankIndexFor(state.xp, false) >= CONTRACT_RANK;
-}
-
-function daysUntilContract() {
-  if (state.contract) return 0;
-  return Math.max(0, CONTRACT_DAY - daysServed());
-}
-
-function shopTripsLimit() {
-  return SHOP_MAX_TRIPS;
-}
-
-function shopTripsLeft() {
-  refreshShopTrips();
-  return state.shop.charges;
-}
-
-function refreshShopTrips(now = Date.now()) {
-  if (!state.shop) state.shop = { charges: SHOP_MAX_TRIPS, lastAt: now };
-  if (state.shop.charges >= SHOP_MAX_TRIPS) {
-    state.shop.charges = SHOP_MAX_TRIPS;
-    state.shop.lastAt = now;
-    return false;
-  }
-  const gained = Math.floor((now - state.shop.lastAt) / SHOP_TRIP_MS);
-  if (gained <= 0) return false;
-  state.shop.charges = Math.min(SHOP_MAX_TRIPS, state.shop.charges + gained);
-  state.shop.lastAt = state.shop.charges >= SHOP_MAX_TRIPS ? now : state.shop.lastAt + gained * SHOP_TRIP_MS;
-  return true;
-}
-
-function shopTripWait() {
-  refreshShopTrips();
-  return state.shop.charges >= SHOP_MAX_TRIPS ? 0 : Math.max(0, state.shop.lastAt + SHOP_TRIP_MS - Date.now());
 }
 
 function busyAction() {
@@ -1519,6 +1513,10 @@ const els = {
   periodMeta: $('#periodMeta'),
   streakMeta: $('#streakMeta'),
   moneyTop: $('#moneyTop'),
+  topName: $('#topName'),
+  topLevel: $('#topLevel'),
+  profileTop: $('#profileTop'),
+  editNameBtn: $('#editNameBtn'),
   shopMoney: $('#shopMoney'),
   shopTrips: $('#shopTrips'),
   shopSpeed: $('#shopSpeed'),
@@ -1526,18 +1524,35 @@ const els = {
   shopNote: $('#shopNote'),
   dailyList: $('#dailyList'),
   careList: $('#careList'),
+  kppCareList: $('#kppCareList'),
+  healthList: $('#healthList'),
   questBody: $('#questBody'),
   questCounter: $('#questCounter'),
   dutyPicker: $('#dutyPicker'),
   staffPosition: $('#staffPosition'),
   staffAch: $('#staffAch'),
   leaderboardBtn: $('#leaderboardBtn'),
-  contractBtn: $('#contractBtn'),
-  contractTitle: $('#contractTitle'),
-  contractNote: $('#contractNote'),
-  contractArrow: $('#contractArrow'),
+  achievementsBtn: $('#achievementsBtn'),
   demobAlbumBtn: $('#demobAlbumBtn'),
   actionGrid: $('#actionGrid'),
+  plazGrid: $('#plazGrid'),
+  kppGrid: $('#kppGrid'),
+  canteenGrid: $('#canteenGrid'),
+  shopGrid: $('#shopGrid'),
+  sickbayGrid: $('#sickbayGrid'),
+  staffGrid: $('#staffGrid'),
+  canteenMenu: $('#canteenMenu'),
+  canteenMoney: $('#canteenMoney'),
+  mapStage: $('#mapStage'),
+  mapDay: $('#mapDay'),
+  mapCentral: $('.map-node-center'),
+  mapCentralNote: $('#mapCentralNote'),
+  mapStatusPlaz: $('#mapStatusPlaz'),
+  mapStatusKpp: $('#mapStatusKpp'),
+  mapStatusCanteen: $('#mapStatusCanteen'),
+  mapStatusShop: $('#mapStatusShop'),
+  mapStatusSickbay: $('#mapStatusSickbay'),
+  mapStatusStaff: $('#mapStatusStaff'),
   log: $('#log'),
   quote: $('#quote'),
   toasts: $('#toasts'),
@@ -1555,21 +1570,20 @@ const cardEls = new Map();
 
 function renderHero() {
   const r = rankProgress();
-  const p = periodProgress();
-
   els.heroName.textContent = state.name;
-  els.rankBadge.textContent = `${r.rank.emoji} ${r.rank.title}`;
-  const periodText = `${p.period.emoji} ${p.period.title} · ${p.dayInPeriod}/${p.length}`;
-  els.lvlChip.textContent = periodText;
-  if (els.rankBadgeTop) els.rankBadgeTop.textContent = `${r.rank.emoji} ${r.rank.title}`;
+  els.rankBadge.textContent = `Ранг ${r.rank.title}`;
+  els.rankBadge.dataset.rank = r.rank.title;
+  const periodText = '';
+  if (els.lvlChip) els.lvlChip.textContent = periodText;
+  if (els.rankBadgeTop) els.rankBadgeTop.textContent = `Уровень ${r.rank.title}`;
   if (els.lvlChipTop) els.lvlChipTop.textContent = periodText;
 
   if (r.capped) {
-    els.xpLabel.textContent = `макс. до контракта · ${r.into} XP`;
+    els.xpLabel.textContent = `${r.into} XP до S`;
   } else if (r.next) {
     els.xpLabel.textContent = `${r.into} / ${r.span} XP`;
   } else {
-    els.xpLabel.textContent = 'максимум · старший сержант';
+    els.xpLabel.textContent = 'S · максимум';
   }
   els.xpBar.style.width = `${r.pct}%`;
 
@@ -1586,11 +1600,14 @@ function renderHero() {
   els.moraleHint.textContent = `доход ×${(0.85 + (state.morale / 100) * 0.3).toFixed(2)}`;
 
   const days = daysUntilDemob();
-  els.daysLeft.textContent = days === 0 ? 'дембель! 😎' : `${days} ${plural(days, 'день', 'дня', 'дней')}`;
+  if (els.daysLeft) els.daysLeft.textContent = days === 0 ? 'дембель! 😎' : `${days} ${plural(days, 'день', 'дня', 'дней')}`;
   els.dutyCount.textContent = fmt(state.stats.duties);
-  if (els.periodMeta) els.periodMeta.textContent = `${p.period.emoji} ${p.period.title}`;
   if (els.streakMeta) els.streakMeta.textContent = `${state.streak?.count || 0} ${plural(state.streak?.count || 0, 'день', 'дня', 'дней')}`;
   els.moneyTop.textContent = rub(state.money);
+  if (els.topName) els.topName.textContent = state.name;
+  if (els.topLevel) { els.topLevel.textContent = r.rank.title; els.topLevel.dataset.rank = r.rank.title; }
+  const buffs = $('#heroBuffs');
+  if (buffs) buffs.innerHTML = `<div class="hero-buffs-title">Бонус</div><div class="hero-buffs-grid"><div><span>Начальные занятия</span><b>−${Math.round(LEVEL_BONUSES[r.idx] * 100)}% времени</b></div><div><span>Скорость от улучшений</span><b>+${Math.round(activitySpeedBonus() * 100)}%</b></div></div>`;
 }
 
 /* ---------- daily render ---------- */
@@ -1602,6 +1619,10 @@ function rewardParts(reward) {
   if (reward.morale) parts.push(`+${reward.morale} 🔥`);
   if (reward.hp) parts.push(`+${reward.hp} ❤️`);
   if (reward.energy) parts.push(`+${reward.energy} ⚡`);
+  if (reward.item) {
+    const item = SHOP.find((entry) => entry.id === reward.item);
+    if (item) parts.push(`${item.icon} ${item.name} ×${reward.count || 1}`);
+  }
   return parts;
 }
 
@@ -1639,6 +1660,80 @@ function applyReward(reward) {
   if (reward.xp) addXp(reward.xp);
 }
 
+// Календарь выдаётся раз в календарный день, предметы хранятся до использования.
+function renderLoginCalendar() {
+  const root = $('#loginCalendar');
+  const button = $('#claimLoginReward');
+  if (!root || !button) return;
+  const progress = state.loginRewards.count || 0;
+  const claimed = state.loginRewards.lastClaimDate === todayKey();
+  const index = (claimed ? Math.max(0, progress - 1) : progress) % LOGIN_REWARDS.length;
+  root.innerHTML = `<p>Входов подряд: ${state.streak.count}</p><div class="login-calendar">${LOGIN_REWARDS.map((reward, i) => {
+    const item = SHOP.find((entry) => entry.id === reward.item);
+    const label = [reward.money ? `${reward.money} ₽` : '', reward.xp ? `${reward.xp} XP` : '', item ? `${item.icon} ×${reward.count}` : ''].filter(Boolean).join(' · ');
+    const done = i < index || (i === index && claimed);
+    return `<div class="login-day ${i === index ? 'is-current' : ''} ${done ? 'is-claimed' : ''}"><b>Награда ${i + 1}${done ? ' ✓' : ''}</b><span>${label}</span></div>`;
+  }).join('')}</div>`;
+  button.disabled = claimed;
+  button.classList.toggle('is-claimed', claimed);
+  button.textContent = claimed ? 'Сегодня получено' : 'Забрать награду';
+}
+
+let inventoryTab = 'consumable';
+const inventoryFilters = new Set();
+function inventoryCategory(item) {
+  if (item.id === 'medkit' || item.id === 'locker') return 'health';
+  if (['pie', 'choco', 'energy'].includes(item.id)) return 'food';
+  if (['laces', 'watch', 'planner'].includes(item.id)) return 'speed';
+  return 'comfort';
+}
+function renderInventory() {
+  const root = $('#inventoryList');
+  const filters = $('#inventoryFilters');
+  if (!root || !filters) return;
+  const categories = inventoryTab === 'consumable'
+    ? [['food', '🥟 Еда и напитки'], ['health', '❤️ Здоровье']]
+    : [['health', '❤️ Здоровье'], ['speed', '⚡ Скорость'], ['comfort', '🛏️ Быт']];
+  filters.innerHTML = categories.map(([id, label]) => `<button type="button" data-inventory-filter="${id}" class="${inventoryFilters.has(id) ? 'is-active' : ''}" aria-pressed="${inventoryFilters.has(id)}">${label}</button>`).join('');
+  $$('#inventoryTabs [data-inventory-tab]').forEach((button) => button.classList.toggle('is-active', button.dataset.inventoryTab === inventoryTab));
+  const items = SHOP.filter((item) => {
+    const count = inventoryTab === 'consumable' ? state.inventory[item.id] : state.purchases[item.id];
+    return (inventoryTab === 'consumable' ? item.temporary : item.permanent) && count > 0 && (!inventoryFilters.size || inventoryFilters.has(inventoryCategory(item)));
+  });
+  root.innerHTML = items.length ? items.map((item) => {
+    const count = inventoryTab === 'consumable' ? state.inventory[item.id] : state.purchases[item.id];
+    return `<div class="inventory-row"><span>${item.icon} <b>${item.name}</b><small>${item.desc} · ${count}${item.permanent && item.max ? `/${item.max}` : ' шт.'}</small></span>${item.temporary ? `<button class="care-btn" data-use-item="${item.id}">Использовать</button>` : '<span class="inventory-owned">Активно</span>'}</div>`;
+  }).join('') : '<p class="inventory-empty">Здесь пока нет предметов.</p>';
+}
+
+function claimLoginReward() {
+  if (state.loginRewards.lastClaimDate === todayKey()) return;
+  const reward = LOGIN_REWARDS[(state.loginRewards.count || 0) % LOGIN_REWARDS.length];
+  state.loginRewards.lastClaimDate = todayKey();
+  state.loginRewards.count = (state.loginRewards.count || 0) + 1;
+  if (reward.item) state.inventory[reward.item] = (state.inventory[reward.item] || 0) + reward.count;
+  applyReward(reward);
+  pushLog({ icon: '🎁', text: 'Ежедневная награда получена', gains: rewardParts(reward), type: 'good' });
+  checkAchievements(); renderAll(); save(); toast('🎁 Награда получена', 'good');
+}
+
+function useInventoryItem(id) {
+  const item = SHOP.find((entry) => entry.id === id && entry.temporary);
+  if (!item || !(state.inventory[id] > 0)) return;
+  if (item.blocked && item.blocked()) { toast(item.fullMsg || 'Сейчас это не нужно', 'info'); return; }
+  if (state.energy >= state.maxEnergy) state.lastEnergyAt = Date.now();
+  if (state.hp >= state.maxHp) state.lastHpAt = Date.now();
+  state.inventory[id] -= 1;
+  item.apply(); renderAll(); save();
+  toast(`${item.icon} ${item.name} использован`, 'good');
+}
+
+function renderLevelsSheet(el) {
+  const current = rankIndexFor(state.xp);
+  el.innerHTML = `<h3 class="sheet-title">Уровни и бонусы</h3><p class="sheet-text">Бонусы сокращают время начальных занятий и не суммируются между уровнями.</p><div class="level-list">${RANKS.slice(0, current + 2).map((rank, i) => `<div class="level-row ${i === current ? 'is-current' : ''}"><b>${rank.title}${i === current ? ' · текущий' : i > current ? ' · следующий' : ''}</b><span>${LEVEL_BONUSES[i] ? `Начальные занятия на ${Math.round(LEVEL_BONUSES[i] * 100)}% быстрее` : 'Базовая скорость'}${i ? ' · +10 к максимуму энергии и +5 к максимуму здоровья' : ''}${i === 3 ? ' · доступ к помощи и караулу' : i === 4 ? ' · доступ к обучению молодых' : i === 5 ? ' · доступ к аккорду' : ''}</span></div>`).join('')}</div><button class="btn btn-primary" data-close>Закрыть</button>`;
+  $$('.level-row', el).forEach((row, i) => { row.dataset.rank = RANKS[i].title; });
+}
+
 function dailyAdd(key, amount) {
   if (!amount) return;
   state.daily.progress[key] = (state.daily.progress[key] || 0) + amount;
@@ -1673,22 +1768,20 @@ function checkDailyTasks() {
 }
 
 function assignDailyDuty() {
-  const keys = Object.keys(DUTIES);
-  const p = periodProgress();
   const current = state.duty?.type;
-  const type = p.idx >= 2 && DUTIES[current] ? current : pick(keys);
+  const type = DUTIES[current] ? current : 'kitchen';
   state.duty = { date: gameDayKey(), type };
 }
 
 function updateStreak() {
   const today = todayKey();
-  if (state.streak.lastDate === today) return;
+  if (state.streak.lastDate === today) return false;
   if (state.streak.lastDate === yesterdayKey()) state.streak.count += 1;
   else state.streak.count = 1;
   state.streak.lastDate = today;
 
   const milestone = STREAK_MILESTONES[state.streak.count];
-  if (!milestone) return;
+  if (!milestone) return true;
 
   applyReward(milestone.reward);
   pushLog({
@@ -1698,6 +1791,7 @@ function updateStreak() {
     type: 'level'
   });
   toast(`${milestone.icon} ${state.streak.count} ${plural(state.streak.count, 'день', 'дня', 'дней')} подряд — награда!`, 'good');
+  return true;
 }
 
 function checkDailyReset(notify = true) {
@@ -1710,6 +1804,11 @@ function checkDailyReset(notify = true) {
   }
   if (state.sickbay.date !== today) {
     state.sickbay = { date: today, used: false };
+    changed = true;
+  }
+  if (state.visitedDate !== today) {
+    state.visitedDate = today;
+    state.visitedToday = false;
     changed = true;
   }
   if (state.duty.date !== today) {
@@ -1726,19 +1825,22 @@ function checkDailyReset(notify = true) {
     if (kettle > 0) state.morale = clamp(state.morale + 6 * kettle, 0, 100);
     changed = true;
     if (notify) {
-      toast('🌅 Новый игровой день — задания и наряд обновились', 'info');
-      notifyPlayer('Новый игровой день', 'Задания и наряд обновились.');
+      toast('🌅 Новый игровой день — задания обновились', 'info');
+      notifyPlayer('Новый игровой день', 'Задания обновились.');
     }
   }
 
-  updateStreak();
+  if (updateStreak()) changed = true;
 
   if (changed) {
     renderDaily();
+    renderLoginCalendar();
     renderShopPanel();
     renderCare();
+    renderKppCare();
     renderQuest();
     renderDutyPicker();
+    renderActions();
     renderHero();
     save();
   }
@@ -1821,6 +1923,11 @@ function careItems() {
     });
   }
 
+  return items;
+}
+
+function kppItems() {
+  const items = [];
   const leaveLeft = state.leaveAt - Date.now();
   if (leaveLeft > 0) {
     items.push({
@@ -1842,12 +1949,13 @@ function careItems() {
     });
   }
 
+  items.push({ id: 'visit', icon: '🚶', title: 'Посещения', desc: 'Поднять боевой дух встречей с близкими. Раз в игровой день.', btn: state.visitedToday ? 'получено' : 'Посетить', action: state.visitedToday ? undefined : 'visit', disabled: Boolean(state.visitedToday) });
   return items;
 }
 
 function renderCare() {
   if (!els.careList) return;
-  els.careList.innerHTML = careItems().map((item) => `
+  els.careList.innerHTML = careItems().filter((item) => item.id === 'sickbay').map((item) => `
     <li class="care-item ${item.disabled ? 'is-disabled' : ''}">
       <span class="care-icon" aria-hidden="true">${item.icon}</span>
       <div class="care-main">
@@ -1857,6 +1965,15 @@ function renderCare() {
       <button class="care-btn" ${item.action ? `data-care="${item.action}"` : ''} ${item.disabled ? 'disabled' : ''}>${item.btn}</button>
     </li>
   `).join('');
+}
+
+function renderKppCare() {
+  if (!els.kppCareList) return;
+  els.kppCareList.innerHTML = [...careItems().filter((item) => item.id.startsWith('package-')), ...kppItems()].map(careItemHtml).join('');
+}
+
+function careItemHtml(item) {
+  return `<li class="care-item ${item.disabled ? 'is-disabled' : ''}"><span class="care-icon" aria-hidden="true">${item.icon}</span><div class="care-main"><b>${item.title}</b><span>${item.desc}</span></div><button class="care-btn" ${item.action ? `data-care="${item.action}"` : ''} ${item.disabled ? 'disabled' : ''}>${item.btn}</button></li>`;
 }
 
 function sendPackage() {
@@ -1874,6 +1991,7 @@ function sendPackage() {
   });
 
   renderCare();
+  renderKppCare();
   save();
   toast('📮 Запрос отправлен — посылка придёт через 2 часа', 'info');
   haptic('success');
@@ -1885,12 +2003,17 @@ function claimPackage() {
   state.package.claimed = true;
   state.package.date = gameDayKey();
   state.stats.packages = (state.stats.packages || 0) + 1;
+  const energyBefore = state.energy;
+  const moraleBefore = state.morale;
+  if (state.energy >= state.maxEnergy) state.lastEnergyAt = Date.now();
   applyReward({ energy: 25, morale: 10 });
+  const receivedEnergy = state.energy - energyBefore;
+  const receivedMorale = state.morale - moraleBefore;
 
   pushLog({
     icon: '📦',
     text: 'Посылка из дома: печенье, носки и записка «Кушай, сынок».',
-    gains: ['+25 ⚡', '+10 🔥'],
+    gains: [`+${receivedEnergy} ⚡`, `+${receivedMorale} 🔥`],
     type: 'good'
   });
 
@@ -1898,6 +2021,9 @@ function claimPackage() {
   renderAll();
   save();
   toast('📦 Посылка получена!', 'good');
+  window.setTimeout(() => openModal((el) => {
+    el.innerHTML = `<div class="sheet-emoji">🎁</div><h3 class="sheet-title">Содержимое посылки</h3><p class="sheet-text">Получено: +${receivedEnergy} ⚡ энергии и +${receivedMorale} 🔥 боевого духа.${receivedEnergy < 25 || receivedMorale < 10 ? ' Часть награды не поместилась из-за предела характеристик.' : ''}</p><button class="btn btn-primary" data-close>Понятно</button>`;
+  }), 2500);
   haptic('success');
 }
 
@@ -1951,6 +2077,18 @@ function takeLeave() {
   save();
   toast('🚌 Увольнительная! День службы не пропущен', 'good');
   haptic('success');
+}
+
+function visit() {
+  if (state.visitedDate !== gameDayKey()) {
+    state.visitedDate = gameDayKey();
+    state.visitedToday = false;
+  }
+  if (state.visitedToday) return;
+  state.visitedToday = true;
+  state.morale = clamp(state.morale + 12, 0, 100);
+  pushLog({ icon: '🚶', text: 'Посещения: встретился с близкими.', gains: ['+12 🔥'], type: 'good' });
+  renderAll(); save(); toast('🚶 Боевой дух поднят', 'good');
 }
 
 /* ---------- квесты прапорщика ---------- */
@@ -2018,40 +2156,53 @@ function claimQuest() {
 
 /* ---------- развод на наряд ---------- */
 
+let locationFilter = null;
 function renderDutyPicker() {
   if (!els.dutyPicker) return;
+  const location = LOCATIONS.find((entry) => entry.id === locationFilter);
+  const duties = location ? location.duties : ['plaz', 'kpp', 'kitchen', 'sklad'];
+  const filters = $('#locationFilters');
+  if (filters) filters.innerHTML = LOCATIONS.map((entry) => `<button type="button" data-location-filter="${entry.id}" class="${entry.id === locationFilter ? 'is-active' : ''}" aria-pressed="${entry.id === locationFilter}">${entry.icon} ${entry.title}</button>`).join('');
+  const options = $('#dutyOptions');
+  if (options) {
+    options.hidden = duties.length === 0;
+    options.innerHTML = duties.map((key) => { const item = DUTIES[key]; return `
+      <button class="duty-option" data-duty-start="${key}">${item.icon} ${item.title}</button>
+    `; }).join('');
+  }
+  renderCurrentDuty();
+}
 
-  const p = periodProgress();
-  const type = dutyType();
-  const d = DUTIES[type];
-
-  const head = `
-    <div class="duty-assigned">
-      <span class="duty-label">Наряд дня</span>
-      <span class="duty-value">${d.icon} ${d.title}</span>
-      <span class="duty-note">${p.idx >= 2 ? 'с периода «Черпак» наряд можно выбрать' : 'назначается случайно · выбор откроется на «Черпаке»'}</span>
-    </div>
-  `;
-
-  if (p.idx < 2) {
-    els.dutyPicker.innerHTML = head;
+// Показываем сохранённое занятие и его уже зафиксированные награды.
+function renderCurrentDuty() {
+  if (!els.dutyPicker) return;
+  const active = busyAction();
+  if (!active) {
+    els.dutyPicker.innerHTML = '<div class="duty-label">Текущее занятие</div><div class="duty-value">Свободен</div>';
     return;
   }
+  const reward = state.busy.reward;
+  const details = reward ? [`${reward.hours} игровых ч`, `+${reward.xpGain} XP`, reward.moneyGain ? `+${reward.moneyGain} ₽` : '', reward.moraleGain ? `${reward.moraleGain > 0 ? '+' : ''}${reward.moraleGain} 🔥` : ''].filter(Boolean).join(' · ') : 'Награда уже начислена';
+  const start = Number(state.busy.startedAt) || 0;
+  const total = Number(state.busy.totalMs) || (start ? active.until - start : 0);
+  const duration = total > 0 ? ` · всего ${fmtDuration(total)}` : '';
+  els.dutyPicker.innerHTML = `<div class="duty-label">Текущее занятие</div><div class="duty-value">${escapeHtml(active.icon)} ${escapeHtml(active.title)}</div><div class="duty-note">Осталось ${fmtClock(active.until - Date.now())}${duration}</div><div class="duty-note">${details}${reward ? ' после завершения' : ''}</div>`;
+}
 
-  els.dutyPicker.innerHTML = `
-    ${head}
-    <div class="duty-options">
-      ${Object.entries(DUTIES).map(([key, item]) => `
-        <button class="duty-option ${key === type ? 'is-active' : ''}" data-duty="${key}">
-          ${item.icon} ${item.title.replace('Наряд ', '')}
-        </button>
-      `).join('')}
-    </div>
-  `;
+// У нарядов общий идентификатор действия, поэтому активный определяется по виду.
+function updateDutyStatuses() {
+  const active = busyAction();
+  $$('#dutyOptions [data-duty-start]').forEach((button) => {
+    const isActive = active?.id === 'duty' && state.duty?.type === button.dataset.dutyStart;
+    button.classList.toggle('is-active', Boolean(isActive));
+    button.disabled = Boolean(active && !isActive);
+    const item = DUTIES[button.dataset.dutyStart];
+    button.textContent = `${item.icon} ${item.title}${isActive ? ` · ${fmtDuration(active.until - Date.now())}` : ''}`;
+  });
 }
 
 function chooseDuty(type) {
-  if (!DUTIES[type] || periodProgress().idx < 2) return;
+  if (!DUTIES[type]) return;
   if (!requireFree()) return;
 
   state.duty = { date: gameDayKey(), type };
@@ -2069,6 +2220,18 @@ function timeLabel(ts) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+let logHoursShown = 1;
+let logWindowEnd = Date.now();
+
+// Храним события за 24 часа; отображаем историю часовыми порциями.
+function pruneLog(now = Date.now()) {
+  const cutoff = now - LOG_RETENTION_MS;
+  const before = state.log.length;
+  if (!archiveOldEvents(state.log, now)) return false;
+  state.log = state.log.filter((entry) => Number(entry.t) >= cutoff);
+  return before !== state.log.length;
+}
+
 function renderLogEntry(entry, prepend) {
   const empty = $('.log-empty', els.log);
   if (empty) empty.remove();
@@ -2076,12 +2239,12 @@ function renderLogEntry(entry, prepend) {
   const li = document.createElement('li');
   li.className = `log-item log-${entry.type || 'info'}`;
 
-  const gains = (entry.gains || []).map((g) => `<span>${g}</span>`).join('');
+  const gains = (entry.gains || []).map((g) => `<span>${escapeHtml(String(g))}</span>`).join('');
 
   li.innerHTML = `
-    <span class="log-icon" aria-hidden="true">${entry.icon || '•'}</span>
+    <span class="log-icon" aria-hidden="true">${escapeHtml(String(entry.icon || '•'))}</span>
     <div class="log-body">
-      <p>${entry.text}</p>
+      <p>${escapeHtml(String(entry.text || ''))}</p>
       <div class="log-meta">
         <time>${timeLabel(entry.t)}</time>
         <div class="log-gains">${gains}</div>
@@ -2092,28 +2255,32 @@ function renderLogEntry(entry, prepend) {
   if (prepend) els.log.insertBefore(li, els.log.firstChild);
   else els.log.appendChild(li);
 
-  while (els.log.children.length > MAX_LOG) {
-    els.log.lastElementChild.remove();
-  }
 }
 
-function renderLog() {
+function renderLog(reset = false) {
+  if (reset) { logHoursShown = 1; logWindowEnd = Date.now(); }
+  const now = Date.now();
+  if (pruneLog(now)) save();
+  const cutoff = Math.max(now - LOG_RETENTION_MS, logWindowEnd - logHoursShown * HOUR_MS);
+  const visible = state.log.filter((entry) => entry.t >= cutoff);
+  const more = $('#logMore');
   els.log.innerHTML = '';
-  if (!state.log.length) {
+  if (!visible.length) {
     const li = document.createElement('li');
     li.className = 'log-empty';
-    li.textContent = 'Пока тихо. Самое время начать службу.';
+    li.textContent = 'За выбранное время событий нет.';
     els.log.appendChild(li);
-    return;
+  } else {
+    visible.forEach((entry) => renderLogEntry(entry, false));
   }
-  state.log.forEach((entry) => renderLogEntry(entry, false));
+  if (more) more.hidden = !state.log.some((entry) => entry.t < cutoff);
 }
 
 function pushLog({ icon, text, gains = [], type = 'info' }) {
   const entry = { t: Date.now(), icon, text, gains: gains.filter(Boolean), type };
   state.log.unshift(entry);
-  state.log = state.log.slice(0, MAX_LOG);
-  renderLogEntry(entry, true);
+  pruneLog();
+  renderLog();
   save();
 }
 
@@ -2134,18 +2301,39 @@ function toast(text, type = 'info') {
 function renderAll() {
   renderHero();
   renderDaily();
+  renderLoginCalendar();
+  renderInventory();
   renderCare();
+  renderKppCare();
   renderQuest();
   renderDutyPicker();
   renderStaff();
   renderShopPanel();
+  renderCanteen();
+  renderMap();
   updateActionStates();
+  updateDutyStatuses();
   renderStatusLine();
   renderMoney();
   renderSettings();
 }
 
 function renderSettings() {
+  const theme = state.settings.theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#e9eef7' : '#0a0c12');
+  $$('[data-theme-choice]').forEach((button) => {
+    const active = button.dataset.themeChoice === theme;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  if (tg) {
+    try {
+      const color = theme === 'light' ? '#e9eef7' : '#0a0c12';
+      tg.setHeaderColor?.(color);
+      tg.setBackgroundColor?.(color);
+    } catch (e) { /* Не все версии Telegram поддерживают смену цвета. */ }
+  }
   if (els.soundToggle) {
     els.soundToggle.classList.toggle('is-on', Boolean(state.settings.sound));
     els.soundToggle.setAttribute('aria-checked', String(Boolean(state.settings.sound)));
@@ -2168,15 +2356,67 @@ function renderStatusLine() {
     els.statusTime.textContent = fmtClock(remaining);
     els.statusProgress.style.width = `${clamp((elapsed / total) * 100, 0, 100)}%`;
   } else {
-    const energyWait = state.energy >= state.maxEnergy ? 'готова' : fmtClock(Math.max(0, state.lastEnergyAt + ENERGY_MS - now));
-    els.statusText.textContent = 'Служба идёт · свободен';
-    els.statusTime.textContent = state.energy >= state.maxEnergy ? `⚡ ${Math.round(state.energy)}/${state.maxEnergy}` : `⚡ +1 через ${energyWait}`;
+    els.statusText.textContent = 'Свободен';
+    els.statusTime.textContent = '';
     els.statusProgress.style.width = '0%';
   }
 }
 
+function renderRecoverySheet(el, resource) {
+  const energy = resource === 'energy';
+  const value = energy ? state.energy : state.hp;
+  const max = energy ? state.maxEnergy : state.maxHp;
+  const interval = energy ? ENERGY_MS : HP_MS;
+  const lastAt = energy ? state.lastEnergyAt : state.lastHpAt;
+  const missing = Math.max(0, Math.ceil(max - value));
+  const wait = missing ? Math.max(0, lastAt + missing * interval - Date.now()) : 0;
+  el.innerHTML = `<h3 class="sheet-title">${energy ? '⚡ Энергия' : '❤️ Здоровье'}</h3><p class="sheet-text">${Math.round(value)} / ${max}</p><p class="sheet-text">Полное восстановление — ${missing ? fmtDuration(wait) : 'полное'}</p><button class="btn btn-primary" data-close>Закрыть</button>`;
+}
+
+function updateEnergyPopover() {
+  const popup = $('#energyPopover');
+  if (!popup || popup.hidden) return;
+  const missing = Math.max(0, Math.ceil(state.maxEnergy - state.energy));
+  const wait = missing ? Math.max(0, state.lastEnergyAt + missing * ENERGY_MS - Date.now()) : 0;
+  popup.textContent = `Полное восстановление — ${missing ? fmtDuration(wait) : 'полное'}`;
+}
+
 function renderMoney() {
   els.moneyTop.textContent = rub(state.money);
+}
+
+/* ---------- map of the garrison ---------- */
+
+function renderMap() {
+  const busy = busyAction();
+  if (els.mapCentralNote) {
+    els.mapCentralNote.textContent = busy
+      ? `идёт: ${busy.title.toLowerCase()}`
+      : 'свободен · выбери занятие';
+  }
+  if (els.mapCentral) els.mapCentral.classList.toggle('is-busy', Boolean(busy));
+
+  if (els.mapStatusShop) els.mapStatusShop.textContent = '';
+
+  if (els.mapStatusPlaz) {
+    els.mapStatusPlaz.textContent = '';
+  }
+
+  if (els.mapStatusKpp) {
+    els.mapStatusKpp.textContent = '';
+  }
+
+  if (els.mapStatusCanteen) {
+    els.mapStatusCanteen.textContent = '';
+  }
+
+  if (els.mapStatusSickbay) {
+    els.mapStatusSickbay.textContent = '';
+  }
+
+  if (els.mapStatusStaff) {
+    els.mapStatusStaff.textContent = '';
+  }
 }
 
 /* ---------- leaderboard / staff ---------- */
@@ -2253,7 +2493,6 @@ function renderStaff() {
 
   const placeInfo = myLeaderboardPlace();
   const unlocked = ACHIEVEMENTS.filter((a) => state.achievements[a.id]).length;
-  const ready = contractAvailable();
 
   els.staffPosition.textContent = !cloudLeaderboard && tg?.initData
     ? (leaderboardError ? 'Рейтинг недоступен' : 'Загрузка рейтинга…')
@@ -2261,56 +2500,19 @@ function renderStaff() {
   els.staffAch.textContent = `Открыто ${unlocked} из ${ACHIEVEMENTS.length}`;
   els.leaderboardBtn.disabled = false;
 
-  if (els.contractBtn) {
-    els.contractBtn.hidden = Boolean(state.contract);
-    els.contractBtn.disabled = !ready;
-    els.contractBtn.classList.toggle('is-ready', ready);
-    els.contractTitle.textContent = ready ? 'Подписать контракт' : 'Контракт';
-    if (ready) {
-      els.contractNote.textContent = 'Половина службы позади · откроет новые звания';
-    } else if (daysServed() < CONTRACT_DAY) {
-      els.contractNote.textContent = `После половины службы · осталось ${daysUntilContract()} ${plural(daysUntilContract(), 'день', 'дня', 'дней')}`;
-    } else {
-      els.contractNote.textContent = `Нужно звание Младший сержант · ${state.xp} / 1800 XP`;
-    }
-    els.contractArrow.textContent = ready ? '→' : '🔒';
-  }
-
-  els.demobAlbumBtn.hidden = daysUntilDemob() > 0;
+  els.demobAlbumBtn.hidden = true;
+  renderStaffTab();
 }
 
-function signContract() {
-  if (state.contract) return;
-
-  if (!contractAvailable()) {
-    if (daysServed() < CONTRACT_DAY) {
-      toast(`📄 Контракт подписывают после половины службы — осталось ${daysUntilContract()} ${plural(daysUntilContract(), 'день', 'дня', 'дней')}`, 'info');
-    } else {
-      toast('📄 Для контракта нужно звание Младший сержант', 'info');
-    }
-    haptic('error');
-    return;
-  }
-
-  const before = rankIndexFor(state.xp, false);
-  state.contract = true;
-  const after = rankIndexFor(state.xp, true);
-
-  pushLog({
-    icon: '📄',
-    text: 'Контракт подписан. Теперь доступны звания до старшего сержанта.',
-    gains: [],
-    type: 'level'
-  });
-
-  if (after > before) applyRankPromotion(before, after);
-
-  checkAchievements();
-  renderStaff();
-  renderHero();
-  save();
-  toast('📄 Контракт подписан! Открыты новые звания', 'good');
-  haptic('success');
+let staffTab = 'leaderboard';
+function renderStaffTab() {
+  const content = $('#staffTabContent');
+  if (!content) return;
+  els.leaderboardBtn.classList.toggle('is-selected', staffTab === 'leaderboard');
+  els.achievementsBtn.classList.toggle('is-selected', staffTab === 'achievements');
+  if (staffTab === 'leaderboard') renderLeaderboard(content);
+  else renderAchievements(content);
+  content.querySelectorAll('[data-close], .sheet-handle').forEach((el) => el.remove());
 }
 
 /* ---------- achievements ---------- */
@@ -2395,9 +2597,7 @@ function renderLeaderboard(el) {
   const rows = rowsEntries.map((entry, index) => {
     const place = entry.place || index + 1;
     const medal = place === 1 ? '🥇' : place === 2 ? '🥈' : place === 3 ? '🥉' : place;
-    const details = cloud
-      ? `${entry.rankTitle} · ${entry.serviceDays} ${plural(entry.serviceDays, 'день', 'дня', 'дней')} службы`
-      : entry.rankTitle;
+    const details = entry.rankTitle;
 
     return `
       <li class="lb-row ${entry.isPlayer ? 'is-me' : ''}">
@@ -2443,7 +2643,8 @@ function renderLeaderboard(el) {
       refreshBtn.disabled = true;
       const ok = await refreshLeaderboard(true);
       if (ok) {
-        renderLeaderboard(el);
+        if (el.id === 'staffTabContent') renderStaffTab();
+        else renderLeaderboard(el);
       } else {
         refreshBtn.disabled = false;
         toast('Не удалось обновить рейтинг. Проверьте связь.', 'info');
@@ -2563,12 +2764,13 @@ function actionRewardLabel(action) {
 function actionCardHtml(action) {
   const chips = [
     `<span class="chip-cost">⚡ ${action.energy}</span>`,
+    ...(ACTION_HEALTH_COST[action.id] ? [`<span class="chip-health">❤️ −${ACTION_HEALTH_COST[action.id]}</span>`] : []),
     `<span class="chip-hours">🕒 ${fmtDuration(activityDurationMs(action))}</span>`,
     `<span>+${action.xp[0]}–${action.xp[1]} XP</span>`
   ];
 
   return `
-    <button class="action-card" data-action="${action.id}" data-period="${action.minPeriod}" aria-label="${action.title}">
+    <button class="action-card" data-action="${action.id}" aria-label="${action.title}">
       <span class="action-icon" aria-hidden="true">${action.icon}</span>
       <span class="action-main">
         <span class="action-title">${action.title}</span>
@@ -2584,56 +2786,81 @@ function actionCardHtml(action) {
   `;
 }
 
+function fillActionGrid(container, actions) {
+  if (!container) return;
+
+  container.innerHTML = actions.map((action) => actionCardHtml(actionFor(action.id))).join('');
+
+  actions.forEach((base) => {
+    container.querySelectorAll(`[data-action="${base.id}"]`).forEach((root) => {
+      const list = cardEls.get(base.id) || [];
+      list.push({
+        root,
+        status: $('.action-status', root),
+        line: $('.cd-line', root)
+      });
+      cardEls.set(base.id, list);
+    });
+  });
+}
+
 function renderActions() {
-  els.actionGrid.innerHTML = ACTIONS.map((a) => actionCardHtml(actionFor(a.id))).join('');
   cardEls.clear();
 
-  ACTIONS.forEach((action) => {
-    const root = els.actionGrid.querySelector(`[data-action="${action.id}"]`);
-    if (!root) return;
-    cardEls.set(action.id, {
-      root,
-      status: $('.action-status', root),
-      line: $('.cd-line', root)
-    });
+  const duty = dutyType();
+
+  const location = LOCATIONS.find((entry) => entry.id === locationFilter);
+  const barracksActions = ACTIONS.filter((action) => action.id !== 'duty' && (!location || location.actions.includes(action.id)))
+    .sort((a, b) => activityDurationMs(actionFor(a.id)) - activityDurationMs(actionFor(b.id)));
+  fillActionGrid(els.actionGrid, barracksActions);
+  const empty = $('#filterEmpty');
+  if (empty) empty.hidden = !location || barracksActions.length > 0 || location.duties.length > 0;
+  const grids = { plaz: els.plazGrid, kpp: els.kppGrid, canteen: els.canteenGrid, shop: els.shopGrid, sickbay: els.sickbayGrid, staff: els.staffGrid };
+  Object.entries(grids).forEach(([id, grid]) => {
+    const location = LOCATIONS.find((entry) => entry.id === id);
+    fillActionGrid(grid, ACTIONS.filter((action) => location.actions.includes(action.id) || (action.id === 'duty' && location.duties.includes(duty))));
   });
 
   updateActionStates();
+  updateDutyStatuses();
 }
 
 function updateActionStates() {
   const now = Date.now();
-  const periodIdx = periodProgress().idx;
+  const levelIdx = rankIndexFor(state.xp);
 
   ACTIONS.forEach((base) => {
     const action = actionFor(base.id);
-    const ref = cardEls.get(base.id);
-    if (!ref) return;
+    const refs = cardEls.get(base.id) || [];
+    if (!refs.length) return;
 
-    const periodOk = periodIdx >= base.minPeriod;
+    const requiredLevel = ACTION_LEVELS[base.id] || 0;
+    const periodOk = levelIdx >= requiredLevel;
     const remain = (state.cooldowns[base.id] || 0) - now;
     const blocker = busyBlockerFor(base.id);
     const lowEnergy = state.energy < action.energy;
     const cooldownMs = (base.cooldownHours || base.hours) * HOUR_MS;
 
-    ref.root.classList.toggle('is-period-locked', !periodOk);
-    ref.root.classList.toggle('is-cd', periodOk && remain > 0);
-    ref.root.classList.toggle('is-locked', periodOk && remain <= 0 && !blocker && lowEnergy);
-    ref.root.classList.toggle('is-blocked', periodOk && remain <= 0 && Boolean(blocker));
+    refs.forEach((ref) => {
+      ref.root.classList.toggle('is-period-locked', !periodOk);
+      ref.root.classList.toggle('is-cd', periodOk && remain > 0);
+      ref.root.classList.toggle('is-locked', periodOk && remain <= 0 && !blocker && lowEnergy);
+      ref.root.classList.toggle('is-blocked', periodOk && remain <= 0 && Boolean(blocker));
 
-    if (!periodOk) {
-      ref.status.textContent = `🔒 ${PERIODS[base.minPeriod].title}`;
-      ref.line.style.width = '0%';
-    } else if (remain > 0) {
-      ref.status.textContent = `⏱ ${fmtDuration(remain)}`;
-      ref.line.style.width = `${clamp((1 - remain / cooldownMs) * 100, 0, 100)}%`;
-    } else if (blocker) {
-      ref.status.textContent = `⏳ ${fmtDuration(blocker.until - now)}`;
-      ref.line.style.width = '0%';
-    } else {
-      ref.status.textContent = lowEnergy ? `нужно ⚡${action.energy}` : 'готово';
-      ref.line.style.width = '0%';
-    }
+      if (!periodOk) {
+        ref.status.textContent = `🔒 ${RANKS[requiredLevel].title}`;
+        ref.line.style.width = '0%';
+      } else if (remain > 0) {
+        ref.status.textContent = blocker?.id === base.id ? 'выполняется' : `⏱ ${fmtDuration(remain)}`;
+        ref.line.style.width = `${clamp((1 - remain / cooldownMs) * 100, 0, 100)}%`;
+      } else if (blocker) {
+        ref.status.textContent = blocker.id === base.id ? 'выполняется' : 'занято';
+        ref.line.style.width = '0%';
+      } else {
+        ref.status.textContent = lowEnergy ? `нужно ⚡${action.energy}` : 'готово';
+        ref.line.style.width = '0%';
+      }
+    });
   });
 }
 
@@ -2649,7 +2876,7 @@ function applyRankPromotion(from, to) {
   const rank = RANKS[to];
   pushLog({
     icon: '🎖️',
-    text: `Новое звание — ${rank.title}!`,
+    text: `Новый уровень — ${rank.title}!`,
     gains: [`+${10 * gained} ⚡ макс.`, `+${5 * gained} ❤️ макс.`],
     type: 'level'
   });
@@ -2668,6 +2895,9 @@ function addXp(amount) {
 
   if (after <= before) return;
   applyRankPromotion(before, after);
+  // Обновляем карточки: изменились доступ и время начальных занятий.
+  renderActions();
+  renderDutyPicker();
 }
 
 /* ---------- events ---------- */
@@ -2725,9 +2955,9 @@ function doAction(id) {
   const action = actionFor(id);
   const now = Date.now();
 
-  const p = periodProgress();
-  if (p.idx < base.minPeriod) {
-    toast(`🔒 Откроется в период «${PERIODS[base.minPeriod].title}»`, 'info');
+  const requiredLevel = ACTION_LEVELS[id] || 0;
+  if (rankIndexFor(state.xp) < requiredLevel) {
+    toast(`🔒 Откроется на уровне ${RANKS[requiredLevel].title}`, 'info');
     haptic('error');
     return;
   }
@@ -2746,21 +2976,29 @@ function doAction(id) {
   }
 
   if (state.energy < action.energy) {
-    toast('⚡ Не хватает энергии — отдохни или загляни в чипок', 'bad');
+    toast('⚡ Не хватает энергии — отдохни или загляни в столовую', 'bad');
     haptic('error');
+    return;
+  }
+
+  // Здоровье расходуется при начале, как и энергия; награды — по завершении.
+  const healthCost = ACTION_HEALTH_COST[id] || 0;
+  if (healthCost && state.hp <= healthCost) {
+    toast(`❤️ Нужно больше ${healthCost} здоровья`, 'bad');
     return;
   }
 
   if (state.energy >= state.maxEnergy) state.lastEnergyAt = now;
   state.energy -= action.energy;
+  if (healthCost) {
+    if (state.hp >= state.maxHp) state.lastHpAt = now;
+    state.hp -= healthCost;
+  }
 
   const mult = rewardMultiplier();
   const xpGain = Math.max(1, Math.round(rand(action.xp[0], action.xp[1]) * mult));
   const moneyGain = Math.round(rand(action.money[0], action.money[1]) * mult);
   const moraleGain = action.morale || 0;
-
-  state.money += moneyGain;
-  state.morale = clamp(state.morale + moraleGain, 0, 100);
   if (base.cooldownHours) state.cooldowns[id] = now + base.cooldownHours * HOUR_MS;
 
   const durationMs = activityDurationMs(action);
@@ -2770,48 +3008,16 @@ function doAction(id) {
     icon: action.icon,
     startedAt: now,
     totalMs: durationMs,
-    until: now + durationMs
+    until: now + durationMs,
+    rewardVersion: 1,
+    reward: { xpGain, moneyGain, moraleGain, hours: action.hours, flavor: pick(action.flavor), icon: action.icon, title: action.title, duty: Boolean(action.duty) }
   };
-
-  if (action.duty) state.stats.duties += 1;
-  state.stats.totalEarned += moneyGain;
-  state.stats.actionsTotal = (state.stats.actionsTotal || 0) + 1;
-  state.stats.hours = (state.stats.hours || 0) + action.hours;
-  state.stats.byAction = state.stats.byAction || {};
-  state.stats.byAction[id] = (state.stats.byAction[id] || 0) + 1;
-
-  addXp(xpGain);
-
-  dailyAdd('hours', action.hours);
-  dailyAdd('earn', moneyGain);
-  if (id === 'call') dailyAdd('call', 1);
-
-  const gains = [`+${xpGain} XP`, `🕒 +${action.hours} ч службы`];
-  if (moneyGain > 0) gains.push(`+${fmt(moneyGain)} ₽`);
-  if (moraleGain) gains.push(`${moraleGain > 0 ? '+' : ''}${moraleGain} 🔥`);
-
-  pushLog({
-    icon: action.icon,
-    text: pick(action.flavor),
-    gains,
-    type: moraleGain < 0 ? 'bad' : 'good'
-  });
-
-  let event = null;
-  if (Math.random() < EVENT_CHANCE) event = triggerEvent();
-
-  checkAchievements();
   renderAll();
   save();
   haptic('success');
   playSound('success');
 
-  const toastParts = [`+${xpGain} XP`];
-  if (moneyGain > 0) toastParts.push(`+${fmt(moneyGain)} ₽`);
-  toast(`${action.icon} ${action.title}: ${toastParts.join(' · ')} · ${action.hours} ч службы`, 'good');
-
-  if (event) openModal((el) => renderEventSheet(el, event));
-  if (daysUntilDemob() <= 0 && !state.demobSeen) window.setTimeout(showDemob, 500);
+  toast(`${action.icon} ${action.title} начато · награда после выполнения`, 'info');
 }
 
 /* ---------- modals ---------- */
@@ -2845,23 +3051,39 @@ function showNextModal() {
 }
 
 function closeModal() {
+  if (!state.nameChosen && $('#nameForm', els.sheet)) return;
   showNextModal();
 }
 
 function renderLevelSheet(el, rank, gained) {
-  const capped = !state.contract && rankIndexFor(state.xp, state.contract) >= CONTRACT_RANK;
-
   el.innerHTML = `
     <div class="sheet-emoji">${rank.emoji}</div>
-    <h3 class="sheet-title">Новое звание!</h3>
-    <p class="sheet-text">Теперь ты — <b>${rank.title}</b>. Сослуживцы смотрят с уважением, а прапорщик — с подозрением.</p>
-    ${capped ? '<p class="sheet-text">Потолок срочника — младший сержант. Подпиши контракт, чтобы расти дальше.</p>' : ''}
+    <h3 class="sheet-title">Новый уровень!</h3>
+    <p class="sheet-text">Теперь твой уровень — <b>${rank.title}</b>.</p>
     <div class="sheet-rewards">
       <span class="reward-pill">+${gained * 10} ⚡ к максимуму</span>
       <span class="reward-pill">+${gained * 5} ❤️ к максимуму</span>
     </div>
     <button class="btn btn-primary" data-close>Служу Отечеству!</button>
   `;
+}
+
+function renderNameSheet(el, required = false) {
+  el.innerHTML = `<h3 class="sheet-title">${required ? 'Выбери ник' : 'Изменить ник'}</h3><form id="nameForm"><label class="name-label" for="nameInput">Ник бойца</label><input id="nameInput" class="name-input" maxlength="24" required autocomplete="nickname" value="${escapeHtml(state.name || '')}"><p class="name-error" id="nameError" aria-live="polite"></p><div class="sheet-actions">${required ? '' : '<button class="btn btn-ghost" type="button" data-close>Отмена</button>'}<button class="btn btn-primary" type="submit">Сохранить</button></div></form>`;
+  const form = $('#nameForm', el);
+  const input = $('#nameInput', el);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const name = input.value.trim();
+    if (!name) { $('#nameError', el).textContent = 'Введите ник'; input.focus(); return; }
+    state.name = name;
+    state.nameChosen = true;
+    renderAll();
+    save();
+    closeModal();
+    if (required) showTutorial();
+  });
+  input.focus();
 }
 
 function renderEventSheet(el, result) {
@@ -2930,14 +3152,12 @@ function renderAdmin(el) {
           <label>Максимум здоровья <input id="adminMaxHp" type="number" min="100" max="300" step="1"></label>
           <label>Боевой дух <input id="adminMorale" type="number" min="0" max="100" step="1"></label>
         </div>
-        <label class="admin-check"><input id="adminContract" type="checkbox"> Контракт подписан</label>
         <button class="btn btn-primary" id="adminSave">Сохранить изменения</button>
         <details class="admin-advanced"><summary>Полное сохранение (JSON)</summary><p class="sheet-text">Для опытных пользователей: ошибки могут повредить прогресс. Сохраняется отдельно от полей выше.</p><textarea id="adminData" rows="12" spellcheck="false"></textarea><button class="btn btn-ghost" id="adminSaveJson">Сохранить JSON</button></details>
         <button class="btn btn-ghost" id="adminBan">${player.banned ? 'Разблокировать' : 'Заблокировать'}</button>
         <button class="btn btn-danger" id="adminReset">Сбросить прогресс</button>`;
       const fields = { Name: 'name', Xp: 'xp', Money: 'money', Energy: 'energy', MaxEnergy: 'maxEnergy', Hp: 'hp', MaxHp: 'maxHp', Morale: 'morale' };
       for (const [suffix, key] of Object.entries(fields)) $(`#admin${suffix}`, editor).value = player.data[key] ?? (key === 'maxEnergy' || key === 'maxHp' ? 100 : key === 'name' ? '' : 0);
-      $('#adminContract', editor).checked = Boolean(player.data.contract);
       $('#adminData', editor).value = JSON.stringify(player.data, null, 2);
       const submit = async (data) => {
         if (!confirm(`Сохранить изменения игрока ${id}?`)) return;
@@ -2952,7 +3172,6 @@ function renderAdmin(el) {
           else { if (!input.value.trim() || !input.checkValidity() || !Number.isSafeInteger(Number(input.value))) { toast('Проверьте значения полей', 'bad'); return; } data[key] = Number(input.value); }
         }
         if (data.energy > data.maxEnergy || data.hp > data.maxHp) { toast('Значение не может превышать максимум', 'bad'); return; }
-        data.contract = $('#adminContract', editor).checked;
         submit(data);
       };
       $('#adminSaveJson', editor).onclick = () => {
@@ -2989,7 +3208,7 @@ function shopItemHtml(item, noTrips) {
       <span class="shop-icon" aria-hidden="true">${item.icon}</span>
       <div class="shop-info">
         <b>${item.name}</b>
-        <span>${item.desc}</span>
+        <span>${item.desc}${item.permanent && item.max ? ` · ${bought}/${item.max}` : ''}</span>
       </div>
       <button class="buy-btn ${poor && !soldOut && !blockedByTrips ? 'is-poor' : ''}" data-buy="${item.id}" ${soldOut || blockedByTrips ? 'disabled' : ''}>${label}</button>
     </li>
@@ -2999,31 +3218,33 @@ function shopItemHtml(item, noTrips) {
 function renderShopPanel() {
   if (!els.shopList) return;
 
-  const left = shopTripsLeft();
-  const noTrips = left <= 0;
-  const wait = shopTripWait();
+  const noTrips = false;
 
   els.shopMoney.textContent = rub(state.money);
-  els.shopTrips.innerHTML = `Походы: <b>${left}</b> из ${SHOP_MAX_TRIPS}${noTrips ? ` · следующий через ${fmtDuration(wait)}` : ''}`;
-  els.shopTrips.classList.toggle('is-empty', noTrips);
-  if (els.shopSpeed) {
-    const speed = activitySpeed();
-    const bonus = Math.round(activitySpeedBonus() * 100);
-    els.shopSpeed.innerHTML = `Скорость занятий: <b>×${speed.toFixed(2).replace(/\.?0+$/, '')}</b>${bonus ? ` · апгрейды +${bonus}%` : ''}`;
-  }
-  els.shopNote.textContent = noTrips
-    ? 'Один поход восстановится через 30 минут. Апгрейды доступны без ограничений по походам.'
-    : 'Расходник стоит один поход. Походы постепенно восстанавливаются каждые 30 минут; апгрейды походов не требуют.';
+  if (els.shopNote) els.shopNote.textContent = '';
 
-  const temporary = SHOP.filter((item) => !item.permanent).sort((a, b) => a.price - b.price);
+  const temporary = SHOP.filter((item) => !item.permanent && !['pie', 'choco', 'energy', 'medkit'].includes(item.id)).sort((a, b) => a.price - b.price);
   const permanent = SHOP.filter((item) => item.permanent).sort((a, b) => a.price - b.price);
 
   els.shopList.innerHTML = `
-    <li class="shop-section"><span>Расходники</span><small>1 поход за покупку</small></li>
+    ${temporary.length ? '<li class="shop-section"><span>Расходники</span></li>' : ''}
     ${temporary.map((item) => shopItemHtml(item, noTrips)).join('')}
     <li class="shop-section"><span>Апгрейды казармы</span><small>всегда доступны</small></li>
     ${permanent.map((item) => shopItemHtml(item, noTrips)).join('')}
   `;
+
+  renderCanteen();
+}
+
+function renderCanteen() {
+  if (!els.canteenMenu) return;
+
+  const noTrips = false;
+  const food = SHOP.filter((item) => ['pie', 'choco', 'energy'].includes(item.id));
+
+  if (els.canteenMoney) els.canteenMoney.textContent = rub(state.money);
+  els.canteenMenu.innerHTML = food.map((item) => shopItemHtml(item, noTrips)).join('');
+  if (els.healthList) els.healthList.innerHTML = SHOP.filter((item) => item.id === 'medkit').map((item) => shopItemHtml(item, false)).join('');
 }
 
 function buyItem(id) {
@@ -3031,12 +3252,6 @@ function buyItem(id) {
   if (!item) return;
 
   const bought = state.purchases[id] || 0;
-
-  if (!item.permanent && shopTripsLeft() <= 0) {
-    toast(`🛒 Следующий поход через ${fmtDuration(shopTripWait())}`, 'info');
-    haptic('error');
-    return;
-  }
 
   if (item.max && bought >= item.max) {
     toast('Больше не продаём — склад пуст', 'info');
@@ -3049,19 +3264,17 @@ function buyItem(id) {
     return;
   }
 
-  if (item.blocked && item.blocked()) {
-    toast(item.fullMsg || 'Сейчас это не нужно', 'info');
-    return;
-  }
-
   state.money -= item.price;
   state.purchases[id] = bought + 1;
-  if (!item.permanent) {
-    if (state.shop.charges >= SHOP_MAX_TRIPS) state.shop.lastAt = Date.now();
-    state.shop.charges = Math.max(0, state.shop.charges - 1);
-  }
   state.stats.buys = (state.stats.buys || 0) + 1;
-  item.apply();
+  if (item.temporary) {
+    // Расходники можно купить заранее и использовать позже из инвентаря.
+    state.inventory[id] = (state.inventory[id] || 0) + 1;
+  } else {
+    if (state.energy >= state.maxEnergy) state.lastEnergyAt = Date.now();
+    if (state.hp >= state.maxHp) state.lastHpAt = Date.now();
+    item.apply();
+  }
 
   pushLog({
     icon: item.icon,
@@ -3075,7 +3288,7 @@ function buyItem(id) {
   renderAll();
   if (item.permanent) renderActions();
 
-  toast(`${item.icon} ${item.name} — куплено${item.permanent ? ' · апгрейд' : ` · походов осталось: ${shopTripsLeft()}`}`, 'good');
+  toast(`${item.icon} ${item.name} — Куплено`, 'good');
   playSound('coin');
   haptic('success');
 }
@@ -3084,7 +3297,7 @@ function renderResetConfirm(el) {
   el.innerHTML = `
     <div class="sheet-emoji">🔄</div>
     <h3 class="sheet-title">Начать службу заново?</h3>
-    <p class="sheet-text">Весь прогресс, деньги и звания будут сброшены${cloudReady ? ' также в аккаунте Telegram' : ' на этом устройстве'}. Как будто снова призыв.</p>
+    <p class="sheet-text">Весь прогресс, деньги и уровни будут сброшены${cloudReady ? ' также в аккаунте Telegram' : ' на этом устройстве'}. Как будто снова призыв.</p>
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-close>Отмена</button>
       <button class="btn btn-danger" id="confirmReset">Сбросить</button>
@@ -3125,13 +3338,26 @@ function renderResetConfirm(el) {
 
 /* ---------- tabs ---------- */
 
+const MAP_TABS = new Set(['map', 'actions', 'shop', 'plaz', 'kpp', 'canteen', 'sickbay', 'staff']);
+
 function setTab(tab) {
+  if (tab === 'log' && !document.querySelector('[data-panel="log"]')?.classList.contains('is-active')) {
+    renderLog(true);
+    const scroll = $('#logScroll');
+    if (scroll) scroll.scrollTop = 0;
+  }
+  if (tab === 'staff') {
+    staffTab = 'leaderboard';
+    renderStaffTab();
+  }
   $$('.panel').forEach((panel) => {
     panel.classList.toggle('is-active', panel.dataset.panel === tab);
   });
   $$('.nav-btn').forEach((btn) => {
-    btn.classList.toggle('is-active', btn.dataset.tab === tab);
+    const active = btn.dataset.tab === tab || (btn.dataset.tab === 'map' && MAP_TABS.has(tab));
+    btn.classList.toggle('is-active', active);
   });
+  if (tab === 'inventory') renderInventory();
 
   if (window.matchMedia('(max-width: 719px)').matches) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3142,13 +3368,12 @@ function setTab(tab) {
 
 let lastCareKey = '';
 let lastPackageState = '';
-let lastShopDisplay = '';
 
 function updateCareLive() {
   const pkg = packageState();
   if (lastPackageState === 'onway' && pkg === 'ready') {
     toast('📦 Посылка из дома прибыла', 'good');
-    notifyPlayer('Посылка прибыла', 'Забери посылку в разделе «Боец».');
+    notifyPlayer('Посылка прибыла', 'Забери посылку на КПП.');
     playSound('success');
   }
   lastPackageState = pkg;
@@ -3159,6 +3384,7 @@ function updateCareLive() {
   if (key === lastCareKey) return;
   lastCareKey = key;
   renderCare();
+  renderKppCare();
 }
 
 function tick() {
@@ -3168,14 +3394,46 @@ function tick() {
   if (state.busy?.id && state.busy.until <= now) {
     const title = state.busy.title || 'Занятие';
     const icon = state.busy.icon || '✅';
+    const reward = state.busy.reward;
+    if (!reward) {
+      state.busy = { id: null, title: '', icon: '', until: 0 };
+      toast(`${icon} ${title} завершено`, 'good');
+      renderAll();
+      save();
+      return;
+    }
+    const xpGain = Number(reward.xpGain) || 0;
+    const moneyGain = Number(reward.moneyGain) || 0;
+    const moraleGain = Number(reward.moraleGain) || 0;
+    state.money += moneyGain;
+    state.morale = clamp(state.morale + moraleGain, 0, 100);
+    if (reward.duty) state.stats.duties += 1;
+    state.stats.totalEarned += moneyGain;
+    state.stats.actionsTotal = (state.stats.actionsTotal || 0) + 1;
+    state.stats.hours = (state.stats.hours || 0) + (Number(reward.hours) || 0);
+    state.stats.byAction = state.stats.byAction || {};
+    state.stats.byAction[state.busy.id] = (state.stats.byAction[state.busy.id] || 0) + 1;
+    addXp(xpGain);
+    dailyAdd('hours', Number(reward.hours) || 0);
+    dailyAdd('earn', moneyGain);
+    if (state.busy.id === 'call') dailyAdd('call', 1);
+    const gains = [`+${xpGain} XP`, `🕒 +${reward.hours || 0} игровых ч`];
+    if (moneyGain > 0) gains.push(`+${fmt(moneyGain)} ₽`);
+    if (moraleGain) gains.push(`${moraleGain > 0 ? '+' : ''}${moraleGain} 🔥`);
     state.busy = { id: null, title: '', icon: '', until: 0 };
     pushLog({
       icon,
-      text: `${title}: служба идёт, время вышло. Можно заняться чем-то ещё.`,
-      gains: [],
-      type: 'info'
+      text: reward.flavor || `${title}: действие выполнено.`,
+      gains,
+      type: moraleGain < 0 ? 'bad' : 'good'
     });
-    toast(`${icon} ${title} завершено`, 'good');
+    if (Math.random() < EVENT_CHANCE) {
+      const event = triggerEvent();
+      openModal((el) => renderEventSheet(el, event));
+    }
+    checkAchievements();
+    renderAll();
+    toast(`${icon} ${title} выполнено · награда получена`, 'good');
     notifyPlayer('Занятие завершено', `${title}: можно выбрать следующее занятие.`);
     playSound('success');
     changed = true;
@@ -3209,20 +3467,15 @@ function tick() {
   }
 
   updateActionStates();
+  updateDutyStatuses();
   renderStatusLine();
-  const tripsChanged = refreshShopTrips(now);
-  const shopDisplay = `${state.shop.charges}:${state.shop.charges < SHOP_MAX_TRIPS ? Math.ceil(shopTripWait() / 60000) : 0}`;
-  if (tripsChanged || shopDisplay !== lastShopDisplay) {
-    lastShopDisplay = shopDisplay;
-    renderShopPanel();
-    if (tripsChanged) save();
-  }
+  updateEnergyPopover();
+  if ($('[data-panel="actions"]')?.classList.contains('is-active')) renderCurrentDuty();
   updateCareLive();
   checkDailyReset();
+  renderMap();
+  if (pruneLog(now)) { renderLog(); save(); }
 
-  if (daysUntilDemob() <= 0 && !state.demobSeen) {
-    window.setTimeout(showDemob, 300);
-  }
 }
 
 /* ---------- boot ---------- */
@@ -3232,8 +3485,8 @@ function initTelegram() {
   try {
     tg.ready();
     tg.expand();
-    if (tg.setHeaderColor) tg.setHeaderColor('#0d0f0b');
-    if (tg.setBackgroundColor) tg.setBackgroundColor('#0d0f0b');
+    if (tg.setHeaderColor) tg.setHeaderColor('#0a0c12');
+    if (tg.setBackgroundColor) tg.setBackgroundColor('#0a0c12');
   } catch (e) {
     /* Telegram API may be partially available */
   }
@@ -3250,12 +3503,217 @@ function seedLog() {
   });
 }
 
-function bindEvents() {
-  els.actionGrid.addEventListener('click', (e) => {
-    const card = e.target.closest('[data-action]');
-    if (!card) return;
-    doAction(card.dataset.action);
+// Масштабируем и перемещаем карту независимо от остальных экранов.
+function bindMapZoom() {
+  const stage = els.mapStage;
+  const content = $('#mapZoomContent');
+  const resetButton = $('#mapResetZoom');
+  const resetLabel = $('#mapResetLabel');
+  if (!stage || !content) return;
+  let scale = 1;
+  let x = 0;
+  let y = 0;
+  let pinch = null;
+  let drag = null;
+  let suppressClickUntil = 0;
+
+  function apply() {
+    // Zoom меняет размеры при раскладке, а не растягивает закэшированный растр.
+    // Это сохраняет чёткость текста и значков после окончания жеста.
+    content.style.zoom = String(scale);
+    content.classList.toggle('is-scaled', Math.abs(scale - 1) > .001);
+    content.style.width = `${stage.clientWidth}px`;
+    content.style.height = `${stage.clientHeight}px`;
+    content.style.left = `${(stage.clientWidth * (1 - scale) / 2 + x) / scale}px`;
+    content.style.top = `${(stage.clientHeight * (1 - scale) / 2 + y) / scale}px`;
+    const changed = Math.abs(scale - 1) > .001 || Math.abs(x) > .5 || Math.abs(y) > .5;
+    resetButton?.classList.toggle('is-changed', changed);
+    if (resetLabel) resetLabel.setAttribute('aria-hidden', String(!changed));
+  }
+
+  function zoomAt(next, clientX, clientY) {
+    const rect = stage.getBoundingClientRect();
+    const px = clientX - rect.left - rect.width / 2;
+    const py = clientY - rect.top - rect.height / 2;
+    next = clamp(next, 0.1, 20);
+    const ratio = next / scale;
+    x = px - (px - x) * ratio;
+    y = py - (py - y) * ratio;
+    scale = next;
+    apply();
+  }
+
+  stage.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    zoomAt(scale * Math.exp(-event.deltaY * .0015), event.clientX, event.clientY);
+  }, { passive: false });
+
+  resetButton?.addEventListener('click', () => {
+    scale = 1;
+    x = 0;
+    y = 0;
+    apply();
   });
+
+  stage.addEventListener('pointerdown', (event) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return;
+    drag = { id: event.pointerId, startX: event.clientX, startY: event.clientY, x, y, moved: false };
+  });
+  stage.addEventListener('pointermove', (event) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      stage.setPointerCapture(event.pointerId);
+      stage.classList.add('is-dragging');
+    }
+    x = drag.x + dx;
+    y = drag.y + dy;
+    apply();
+  });
+  const endDrag = (event) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    if (drag.moved) suppressClickUntil = Date.now() + 400;
+    drag = null;
+    stage.classList.remove('is-dragging');
+  };
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+
+  stage.addEventListener('touchstart', (event) => {
+    if (event.touches.length === 1) {
+      const touch = event.touches[0];
+      drag = { startX: touch.clientX, startY: touch.clientY, x, y, moved: false };
+      return;
+    }
+    if (event.touches.length !== 2) return;
+    drag = null;
+    const [a, b] = event.touches;
+    pinch = { distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), scale };
+    suppressClickUntil = Date.now() + 500;
+  }, { passive: true });
+
+  stage.addEventListener('touchmove', (event) => {
+    if (event.touches.length === 1 && drag && !pinch) {
+      const touch = event.touches[0];
+      const dx = touch.clientX - drag.startX;
+      const dy = touch.clientY - drag.startY;
+      if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+      event.preventDefault();
+      drag.moved = true;
+      x = drag.x + dx;
+      y = drag.y + dy;
+      apply();
+      return;
+    }
+    if (!pinch || event.touches.length !== 2) return;
+    event.preventDefault();
+    const [a, b] = event.touches;
+    const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    if (pinch.distance > 0) zoomAt(pinch.scale * distance / pinch.distance, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
+    suppressClickUntil = Date.now() + 500;
+  }, { passive: false });
+
+  const endPinch = (event) => {
+    if (pinch && event.touches.length < 2) {
+      pinch = null;
+      suppressClickUntil = Date.now() + 500;
+    }
+    if (drag && event.touches.length === 0) {
+      if (drag.moved) suppressClickUntil = Date.now() + 500;
+      drag = null;
+    }
+  };
+  stage.addEventListener('touchend', endPinch);
+  stage.addEventListener('touchcancel', endPinch);
+  stage.addEventListener('click', (event) => {
+    if (Date.now() < suppressClickUntil) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, true);
+  window.addEventListener('resize', apply);
+}
+
+function bindEvents() {
+  $('#activityTop')?.addEventListener('click', () => { setTab('actions'); haptic(); });
+  $('#clearArchiveBtn')?.addEventListener('click', () => openModal((el) => {
+    const count = readLogArchive().length;
+    el.innerHTML = `<h3 class="sheet-title">Очистить старые события?</h3><p class="sheet-text">Будет удалён только локальный архив событий старше 24 часов: ${count} записей. Прогресс и недавние события сохранятся.</p><div class="sheet-actions"><button class="btn btn-ghost" data-close>Отмена</button><button class="btn btn-danger" id="confirmClearArchive">Очистить</button></div>`;
+    $('#confirmClearArchive', el).addEventListener('click', () => {
+      try {
+        if (!archiveOldEvents(state.log)) throw new Error('archive unavailable');
+        localStorage.removeItem(LOG_ARCHIVE_KEY);
+        state.log = state.log.filter((entry) => Number(entry.t) >= Date.now() - LOG_RETENTION_MS);
+        save(); renderLog(); closeModal(); toast('🧹 Старые события удалены', 'good');
+      } catch { toast('Не удалось очистить локальный архив', 'bad'); }
+    });
+  }));
+  $('#logMore')?.addEventListener('click', () => {
+    logHoursShown = Math.min(24, logHoursShown + 1);
+    renderLog();
+  });
+  $$('[data-theme-choice]').forEach((button) => button.addEventListener('click', () => {
+    state.settings.theme = button.dataset.themeChoice === 'light' ? 'light' : 'dark';
+    renderSettings();
+    save();
+  }));
+  bindMapZoom();
+  $$('[data-back]').forEach((button) => { button.textContent = '← Гарнизон'; });
+  const energyButton = $('#energyDetailsBtn');
+  const energyPopover = $('#energyPopover');
+  energyButton?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    energyPopover.hidden = !energyPopover.hidden;
+    energyButton.setAttribute('aria-expanded', String(!energyPopover.hidden));
+    updateEnergyPopover();
+  });
+  document.addEventListener('click', (event) => {
+    if (!energyPopover || event.target.closest('#energyDetailsBtn')) return;
+    energyPopover.hidden = true;
+    energyButton?.setAttribute('aria-expanded', 'false');
+  });
+  $('#healthDetailsBtn')?.addEventListener('click', () => openModal((el) => renderRecoverySheet(el, 'health')));
+  $('#rankBadge')?.addEventListener('click', () => openModal(renderLevelsSheet));
+  $('#claimLoginReward')?.addEventListener('click', claimLoginReward);
+  $('#inventoryList')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-use-item]');
+    if (button) useInventoryItem(button.dataset.useItem);
+  });
+  $('#inventoryTabs')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-inventory-tab]');
+    if (!button) return;
+    inventoryTab = button.dataset.inventoryTab;
+    inventoryFilters.clear();
+    renderInventory();
+  });
+  $('#inventoryFilters')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-inventory-filter]');
+    if (!button) return;
+    const category = button.dataset.inventoryFilter;
+    if (inventoryFilters.has(category)) inventoryFilters.delete(category);
+    else inventoryFilters.add(category);
+    renderInventory();
+  });
+  $('#locationFilters')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-location-filter]');
+    if (!button) return;
+    locationFilter = locationFilter === button.dataset.locationFilter ? null : button.dataset.locationFilter;
+    renderDutyPicker();
+    renderActions();
+  });
+  if (els.profileTop) els.profileTop.addEventListener('click', () => setTab('hero'));
+  if (els.editNameBtn) els.editNameBtn.addEventListener('click', () => openModal((el) => renderNameSheet(el, false)));
+  const actionHost = $('.layout');
+  if (actionHost) {
+    actionHost.addEventListener('click', (e) => {
+      const card = e.target.closest('[data-action]');
+      if (!card) return;
+      doAction(card.dataset.action);
+    });
+  }
 
   $$('.nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -3264,6 +3722,27 @@ function bindEvents() {
       playSound('click');
     });
   });
+
+  if (els.mapStage) {
+    els.mapStage.addEventListener('click', (e) => {
+      const node = e.target.closest('[data-building]');
+      if (!node) return;
+      haptic();
+      playSound('click');
+      setTab(node.dataset.building);
+    });
+  }
+
+  $$('[data-back]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      haptic();
+      playSound('click');
+      setTab('map');
+    });
+  });
+
+  const mapTutorialBtn = $('#mapTutorialBtn');
+  if (mapTutorialBtn) mapTutorialBtn.addEventListener('click', () => showTutorial(true));
 
   $('#shopBtn').addEventListener('click', () => {
     haptic();
@@ -3277,8 +3756,15 @@ function bindEvents() {
     });
   }
 
-  if (els.careList) {
-    els.careList.addEventListener('click', (e) => {
+  if (els.canteenMenu) {
+    els.canteenMenu.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-buy]');
+      if (btn) buyItem(btn.dataset.buy);
+    });
+  }
+
+  [els.careList, els.kppCareList].filter(Boolean).forEach((list) => {
+    list.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-care]');
       if (!btn) return;
       const action = btn.dataset.care;
@@ -3286,8 +3772,13 @@ function bindEvents() {
       else if (action === 'claimPackage') claimPackage();
       else if (action === 'useSickbay') useSickbay();
       else if (action === 'takeLeave') takeLeave();
+      else if (action === 'visit') visit();
     });
-  }
+  });
+  if (els.healthList) els.healthList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-buy]');
+    if (btn) buyItem(btn.dataset.buy);
+  });
 
   if (els.questBody) {
     els.questBody.addEventListener('click', (e) => {
@@ -3295,10 +3786,14 @@ function bindEvents() {
     });
   }
 
-  if (els.dutyPicker) {
-    els.dutyPicker.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-duty]');
-      if (btn) chooseDuty(btn.dataset.duty);
+  const dutyOptions = $('#dutyOptions');
+  if (dutyOptions) {
+    dutyOptions.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-duty-start]');
+      if (!btn || !requireFree()) return;
+      state.duty = { date: gameDayKey(), type: btn.dataset.dutyStart };
+      renderActions();
+      doAction('duty');
     });
   }
 
@@ -3332,22 +3827,19 @@ function bindEvents() {
   });
   $('#tutorialBtn').addEventListener('click', () => showTutorial(true));
   $('#tutorialNext').addEventListener('click', advanceTutorial);
-  $('#adminBtn').addEventListener('click', () => { if (isAdmin && cloudReady) openModal(renderAdmin); });
+  const adminBtn = $('#adminBtn');
+  if (adminBtn) adminBtn.addEventListener('click', () => { if (isAdmin && cloudReady) openModal(renderAdmin); });
   $('#tutorialSkip').addEventListener('click', closeTutorial);
-
-  const contractBtn = $('#contractBtn');
-  if (contractBtn) {
-    contractBtn.addEventListener('click', signContract);
-  }
 
   const leaderboardBtn = $('#leaderboardBtn');
   if (leaderboardBtn) {
     leaderboardBtn.addEventListener('click', async () => {
       haptic();
-      openModal(renderLeaderboard);
+      staffTab = 'leaderboard';
+      renderStaffTab();
       if (tg?.initData && cloudReady) {
-        const ok = await refreshLeaderboard(true);
-        if (ok && modalOpen && els.sheet.querySelector('.lb-list')) renderLeaderboard(els.sheet);
+        await refreshLeaderboard(true);
+        renderStaffTab();
       }
     });
   }
@@ -3356,7 +3848,8 @@ function bindEvents() {
   if (achievementsBtn) {
     achievementsBtn.addEventListener('click', () => {
       haptic();
-      openModal(renderAchievements);
+      staffTab = 'achievements';
+      renderStaffTab();
     });
   }
 
@@ -3432,18 +3925,17 @@ async function boot() {
   renderAll();
   renderLog();
   bindEvents();
+  tick();
   checkAchievements(true);
-  setTab('actions');
+  setTab('map');
   save();
 
-  if (daysUntilDemob() <= 0 && !state.demobSeen) {
-    window.setTimeout(showDemob, 900);
-  }
 
   window.setInterval(tick, 1000);
   window.setInterval(() => { if (!document.hidden) refreshCloud(); }, 15000);
   window.setInterval(() => { if (!document.hidden && cloudReady) refreshLeaderboard(); }, 60000);
-  showTutorial();
+  if (!state.nameChosen) openModal((el) => renderNameSheet(el, true));
+  else showTutorial();
 }
 
 boot();
