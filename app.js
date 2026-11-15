@@ -3167,9 +3167,9 @@ function adminItemRows(data) {
   const purchases = data.purchases || {};
   const rows = SHOP.map((item) => {
     const count = item.permanent ? Number(purchases[item.id] || 0) : Number(inventory[item.id] || 0);
-    return `<div class="admin-item-row"><span class="admin-item-name">${item.icon} <b>${escapeHtml(item.name)}</b><small>${item.permanent ? 'Постоянный предмет' : 'Расходник'}</small></span><strong>${fmt(count)}</strong><button type="button" class="admin-item-minus" data-admin-item="${item.id}" data-admin-delta="-1" aria-label="Убавить ${escapeHtml(item.name)}">−</button><button type="button" class="admin-item-plus" data-admin-item="${item.id}" data-admin-delta="1" aria-label="Добавить ${escapeHtml(item.name)}">+</button></div>`;
+    return `<div class="admin-item-row"><span class="admin-item-name">${item.icon} <b>${escapeHtml(item.name)}</b><small>${item.permanent ? 'Постоянный предмет' : 'Расходник'}</small></span><input class="admin-item-count" data-admin-count="${item.id}" type="number" min="0" max="1000000" value="${count}" aria-label="Количество ${escapeHtml(item.name)}"><button type="button" data-admin-item="${item.id}" data-admin-delta="-1" aria-label="Убавить ${escapeHtml(item.name)}">−</button><button type="button" data-admin-item="${item.id}" data-admin-delta="1" aria-label="Добавить ${escapeHtml(item.name)}">+</button><button type="button" class="admin-item-edit" data-admin-edit="${item.id}" aria-label="Изменить ${escapeHtml(item.name)}">✎</button></div>`;
   }).join('');
-  return `<div class="admin-items"><h4>Предметы и улучшения</h4><p class="sheet-text">Показывается текущее значение. Нажмите «+» или «−», чтобы указать количество изменения.</p>${rows}</div>`;
+  return `<div class="admin-items" id="adminItems"><h4>Предметы и улучшения</h4><p class="sheet-text">Изменения применятся после нажатия общей кнопки сохранения.</p>${rows}</div>`;
 }
 
 function changeAdminItem(data, item, delta) {
@@ -3231,10 +3231,10 @@ function renderAdmin(el) {
           <label>Максимум здоровья <input id="adminMaxHp" type="number" min="100" max="300" step="1"></label>
           <label>Боевой дух <input id="adminMorale" type="number" min="0" max="100" step="1"></label>
         </div>
-         <button class="btn btn-primary" id="adminSave">Сохранить изменения</button>
          ${adminItemRows(player.data)}
         <details class="admin-advanced"><summary>Полное сохранение (JSON)</summary><p class="sheet-text">Для опытных пользователей: ошибки могут повредить прогресс. Сохраняется отдельно от полей выше.</p><textarea id="adminData" rows="12" spellcheck="false"></textarea><button class="btn btn-ghost" id="adminSaveJson">Сохранить JSON</button></details>
-        <button class="btn btn-ghost" id="adminBan">${player.banned ? 'Разблокировать' : 'Заблокировать'}</button>
+         <button class="btn btn-primary" id="adminSave">Сохранить изменения</button>
+         <button class="btn btn-ghost" id="adminBan">${player.banned ? 'Разблокировать' : 'Заблокировать'}</button>
         <button class="btn btn-danger" id="adminReset">Сбросить прогресс</button>`;
       const fields = { Name: 'name', Xp: 'xp', Money: 'money', Energy: 'energy', MaxEnergy: 'maxEnergy', Hp: 'hp', MaxHp: 'maxHp', Morale: 'morale' };
       for (const [suffix, key] of Object.entries(fields)) $(`#admin${suffix}`, editor).value = player.data[key] ?? (key === 'maxEnergy' || key === 'maxHp' ? 100 : key === 'name' ? '' : 0);
@@ -3245,20 +3245,44 @@ function renderAdmin(el) {
         try { await adminRequest('save', id, data, player.revision); toast('Сохранение обновлено', 'good'); $('#adminLoad', el).click(); }
         catch (err) { toast(err.message, 'bad'); }
       };
+      const draft = { ...player.data, inventory: { ...(player.data.inventory || {}) }, purchases: { ...(player.data.purchases || {}) } };
+      const syncItemDraft = () => {
+        SHOP.forEach((item) => {
+          const input = $(`[data-admin-count="${item.id}"]`, editor);
+          const bucket = item.permanent ? draft.purchases : draft.inventory;
+          if (!input || !bucket) return;
+          const value = Math.max(0, Math.min(1000000, Number(input.value) || 0));
+          const old = Number(bucket[item.id] || 0);
+          changeAdminItem(draft, item, value - old);
+          input.value = String(value);
+        });
+      };
+      editor.addEventListener('input', (event) => {
+        const input = event.target.closest('[data-admin-count]');
+        if (!input) return;
+        const item = SHOP.find((entry) => entry.id === input.dataset.adminCount);
+        if (item) input.value = String(Math.max(0, Math.min(1000000, Number(input.value) || 0)));
+      });
       editor.addEventListener('click', (event) => {
         const button = event.target.closest('[data-admin-item]');
-        if (!button) return;
-        const item = SHOP.find((entry) => entry.id === button.dataset.adminItem);
+        const edit = event.target.closest('[data-admin-edit]');
+        const item = SHOP.find((entry) => entry.id === (button?.dataset.adminItem || edit?.dataset.adminEdit));
         if (!item) return;
+        if (!edit) {
+          const input = $(`[data-admin-count="${item.id}"]`, editor);
+          input.value = String(Math.max(0, Math.min(1000000, (Number(input.value) || 0) + Number(button.dataset.adminDelta))));
+          return;
+        }
         openModal((modalEl) => {
-          modalEl.innerHTML = `<h3 class="sheet-title">${button.dataset.adminDelta === '1' ? 'Добавить' : 'Убавить'} предмет</h3><p class="sheet-text">${item.icon} ${escapeHtml(item.name)} · сейчас ${Number((item.permanent ? player.data.purchases : player.data.inventory)?.[item.id] || 0)}</p><label class="admin-label">Количество<input id="adminItemAmount" type="number" min="1" max="1000000" value="1" inputmode="numeric"></label><div class="sheet-actions"><button class="btn btn-ghost" data-close>Отмена</button><button class="btn btn-primary" id="applyAdminItem">Применить</button></div>`;
-          $('#applyAdminItem', modalEl).onclick = async () => {
+          modalEl.innerHTML = `<h3 class="sheet-title">Изменить предмет</h3><p class="sheet-text">${item.icon} ${escapeHtml(item.name)}</p><div class="admin-adjust-choice"><button type="button" class="is-active" data-adjust="1">Прибавить</button><button type="button" data-adjust="-1">Убавить</button></div><label class="admin-label">Количество<input id="adminItemAmount" type="number" min="1" max="1000000" value="1" inputmode="numeric"></label><div class="sheet-actions"><button class="btn btn-ghost" data-close>Отмена</button><button class="btn btn-primary" id="applyAdminItem">Применить</button></div>`;
+          let direction = 1;
+          $$('.admin-adjust-choice button', modalEl).forEach((choice) => choice.onclick = () => { direction = Number(choice.dataset.adjust); $$('.admin-adjust-choice button', modalEl).forEach((b) => b.classList.toggle('is-active', b === choice)); });
+          $('#applyAdminItem', modalEl).onclick = () => {
             const amount = Number($('#adminItemAmount', modalEl).value);
             if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) { toast('Введите корректное количество', 'bad'); return; }
-            const data = { ...player.data, inventory: { ...(player.data.inventory || {}) }, purchases: { ...(player.data.purchases || {}) } };
-            changeAdminItem(data, item, amount * Number(button.dataset.adminDelta));
+            const input = $(`[data-admin-count="${item.id}"]`, editor);
+            input.value = String(Math.max(0, Math.min(1000000, (Number(input.value) || 0) + amount * direction)));
             closeModal();
-            await submit(data);
           };
         });
       });
@@ -3269,6 +3293,11 @@ function renderAdmin(el) {
           if (key === 'name') { data.name = input.value.trim(); if (!data.name) { toast('Введите имя', 'bad'); return; } }
           else { if (!input.value.trim() || !input.checkValidity() || !Number.isSafeInteger(Number(input.value))) { toast('Проверьте значения полей', 'bad'); return; } data[key] = Number(input.value); }
         }
+        syncItemDraft();
+        data.inventory = draft.inventory;
+        data.purchases = draft.purchases;
+        data.maxEnergy = draft.maxEnergy || data.maxEnergy;
+        data.maxHp = draft.maxHp || data.maxHp;
         if (data.energy > data.maxEnergy || data.hp > data.maxHp) { toast('Значение не может превышать максимум', 'bad'); return; }
         submit(data);
       };

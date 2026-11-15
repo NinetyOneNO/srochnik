@@ -1812,12 +1812,15 @@ button:focus-visible {
 .admin-grid select { box-sizing: border-box; width: 100%; padding: 10px; margin: 6px 0; color: var(--text); background: var(--bg); border: 1px solid var(--line-strong); border-radius: 8px; font: inherit; }
 .admin-items { margin: 18px 0; padding-top: 14px; border-top: 1px solid var(--line); }
 .admin-items h4 { margin: 0 0 4px; }
-.admin-item-row { display: grid; grid-template-columns: minmax(0, 1fr) 52px 34px 34px; gap: 6px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); }
+.admin-item-row { display: grid; grid-template-columns: minmax(0, 1fr) 72px 30px 30px 30px; gap: 6px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); }
 .admin-item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-item-name small { display: block; color: var(--muted); font-size: 9px; }
-.admin-item-row strong { text-align: right; font-variant-numeric: tabular-nums; }
-.admin-item-row button { width: 32px; height: 30px; padding: 0; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--card-2); color: var(--text); font-size: 18px; cursor: pointer; }
+.admin-item-count { width: 72px; box-sizing: border-box; padding: 7px 5px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--bg); color: var(--text); text-align: center; font: inherit; font-variant-numeric: tabular-nums; }
+.admin-item-row button { width: 30px; height: 30px; padding: 0; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--card-2); color: var(--text); font-size: 17px; cursor: pointer; }
 .admin-item-row button:hover { border-color: var(--gold); }
+.admin-adjust-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 12px 0; }
+.admin-adjust-choice button { padding: 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--card-2); color: var(--muted); font: inherit; cursor: pointer; }
+.admin-adjust-choice button.is-active { border-color: var(--gold); color: var(--text); background: rgba(255,194,75,.14); }
 .admin-check { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
 .admin-advanced { margin: 14px 0; color: var(--muted); }
 .admin-advanced summary { cursor: pointer; }
