@@ -3172,6 +3172,10 @@ function adminItemRows(data) {
   return `<div class="admin-items" id="adminItems"><h4>Предметы и улучшения</h4><p class="sheet-text">Изменения применятся после нажатия общей кнопки сохранения.</p>${rows}</div>`;
 }
 
+function localGrantRow() {
+  return `<div class="admin-grant"><h3>Выдать предмет</h3><p>Добавляет предмет в локальный инвентарь для проверки.</p><div class="admin-grant-row"><select id="localAdminItem">${SHOP.map((item) => `<option value="${item.id}">${item.icon} ${item.name}</option>`).join('')}</select><input id="localAdminItemCount" type="number" min="1" max="1000000" step="1" value="1" aria-label="Количество предметов"><button class="btn btn-primary" id="localAdminGrant">Выдать</button></div></div>`;
+}
+
 function changeAdminItem(data, item, delta) {
   const bucket = item.permanent ? (data.purchases ||= {}) : (data.inventory ||= {});
   const current = Math.max(0, Number(bucket[item.id]) || 0);
@@ -3225,12 +3229,13 @@ function renderAdmin(el) {
           <label>Ранг <select id="adminRank"></select></label>
           <label>Опыт (XP) <input id="adminXp" type="number" min="0" max="1000000" step="1"></label>
           <label>Деньги (₽) <input id="adminMoney" type="number" min="0" max="1000000000" step="1"></label>
-          <label>Энергия <input id="adminEnergy" type="number" min="0" max="500" step="1"></label>
+         <label>Энергия <input id="adminEnergy" type="number" min="0" max="500" step="1"></label>
           <label>Максимум энергии <input id="adminMaxEnergy" type="number" min="100" max="500" step="1"></label>
           <label>Здоровье <input id="adminHp" type="number" min="0" max="300" step="1"></label>
           <label>Максимум здоровья <input id="adminMaxHp" type="number" min="100" max="300" step="1"></label>
-          <label>Боевой дух <input id="adminMorale" type="number" min="0" max="100" step="1"></label>
-        </div>
+           <label>Боевой дух <input id="adminMorale" type="number" min="0" max="100" step="1"></label>
+         </div>
+         <div class="admin-grant"><h4>Выдать предмет</h4><div class="admin-grant-row"><select id="adminGrantItem">${SHOP.map((item) => `<option value="${item.id}">${item.icon} ${item.name}</option>`).join('')}</select><input id="adminGrantAmount" type="number" min="1" max="1000000" value="1" inputmode="numeric" aria-label="Количество предметов"><button type="button" class="btn btn-ghost" id="adminGrantButton">Выдать</button></div></div>
          ${adminItemRows(player.data)}
         <details class="admin-advanced"><summary>Полное сохранение (JSON)</summary><p class="sheet-text">Для опытных пользователей: ошибки могут повредить прогресс. Сохраняется отдельно от полей выше.</p><textarea id="adminData" rows="12" spellcheck="false"></textarea><button class="btn btn-ghost" id="adminSaveJson">Сохранить JSON</button></details>
          <button class="btn btn-primary" id="adminSave">Сохранить изменения</button>
@@ -3256,6 +3261,14 @@ function renderAdmin(el) {
           changeAdminItem(draft, item, value - old);
           input.value = String(value);
         });
+      };
+      $('#adminGrantButton', editor).onclick = () => {
+        const item = SHOP.find((entry) => entry.id === $('#adminGrantItem', editor).value);
+        const amount = Number($('#adminGrantAmount', editor).value);
+        if (!item || !Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) { toast('Введите корректное количество', 'bad'); return; }
+        const input = $(`[data-admin-count="${item.id}"]`, editor);
+        input.value = String(Math.min(1000000, (Number(input.value) || 0) + amount));
+        toast(`${item.icon} Добавлено в изменения: ${item.name} ×${amount}`, 'info');
       };
       editor.addEventListener('input', (event) => {
         const input = event.target.closest('[data-admin-count]');
@@ -3340,7 +3353,7 @@ function renderLocalAdminPanel() {
       <label>Боевой дух <input id="localAdminMorale" type="number" min="0" max="100" step="1"></label>
     </div>
     <div class="admin-local-actions"><button class="btn btn-primary" id="localAdminSave">Сохранить</button><button class="btn btn-danger" id="localAdminReset">Сбросить прогресс</button></div>
-    <div class="admin-grant"><h3>Выдать предмет</h3><p>Количество не ограничивается. Для постоянных улучшений значение увеличится сверх обычного лимита.</p><div class="admin-grant-row"><select id="localAdminItem">${SHOP.map((item) => `<option value="${item.id}">${item.icon} ${item.name}${item.permanent ? ' · постоянный' : ''}</option>`).join('')}</select><input id="localAdminItemCount" type="number" min="1" max="1000000" step="1" value="1" aria-label="Количество предметов"><button class="btn btn-primary" id="localAdminGrant">Выдать</button></div></div>
+    ${localGrantRow()}
     <details class="admin-advanced"><summary>Полное сохранение JSON</summary><textarea id="localAdminData" rows="14" spellcheck="false"></textarea><button class="btn btn-ghost" id="localAdminSaveJson">Сохранить JSON</button></details>`;
   const fields = { Name: 'name', Xp: 'xp', Money: 'money', Energy: 'energy', MaxEnergy: 'maxEnergy', Hp: 'hp', MaxHp: 'maxHp', Morale: 'morale' };
   for (const [suffix, key] of Object.entries(fields)) $(`#localAdmin${suffix}`, root).value = state[key] ?? (key === 'name' ? '' : 0);
