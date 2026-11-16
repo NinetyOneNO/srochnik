@@ -83,10 +83,6 @@ function fmtClock(ms) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function regenLabel() {
-  return '3:36';
-}
-
 function fmtDuration(ms) {
   const totalMin = Math.max(1, Math.ceil(ms / 60000));
   if (totalMin >= 60) {
@@ -1752,6 +1748,18 @@ const cardEls = new Map();
 
 /* ---------- hero render ---------- */
 
+function updateHpHint() {
+  if (!els.hpHint) return;
+  if (state.hp >= state.maxHp) {
+    els.hpHint.textContent = 'полностью восстановлено';
+  } else {
+    const wait = Math.max(0, state.lastHpAt + HP_MS - Date.now());
+    const timer = `+1 через ${fmtClock(wait)}`;
+    els.hpHint.textContent = state.hp < 25 ? `❕ доход снижен · ${timer}` : timer;
+  }
+  els.hpHint.classList.toggle('is-alert', state.hp < 25);
+}
+
 function renderHero() {
   const r = rankProgress();
   els.heroName.textContent = state.name;
@@ -1773,8 +1781,7 @@ function renderHero() {
 
   els.hpVal.textContent = Math.round(state.hp);
   els.hpBar.style.width = `${clamp((state.hp / state.maxHp) * 100, 0, 100)}%`;
-  els.hpHint.textContent = state.hp < 25 ? '❕ доход снижен — нужно подлечиться' : `+1 каждые ${regenLabel()}`;
-  els.hpHint.classList.toggle('is-alert', state.hp < 25);
+  updateHpHint();
 
   els.energyVal.textContent = `${Math.round(state.energy)}/${state.maxEnergy}`;
   els.energyBar.style.width = `${clamp((state.energy / state.maxEnergy) * 100, 0, 100)}%`;
@@ -4205,6 +4212,10 @@ async function boot() {
   scheduleGameTick();
   window.setInterval(() => { if (!document.hidden) refreshCloud(); }, 15000);
   window.setInterval(() => { if (!document.hidden && cloudReady) refreshLeaderboard(); }, 60000);
+  window.setInterval(() => {
+    if (document.hidden) return;
+    if ($('[data-panel="hero"]')?.classList.contains('is-active')) updateHpHint();
+  }, 1000);
   if (!state.nameChosen) openModal((el) => renderNameSheet(el, true));
   else showTutorial();
 }
