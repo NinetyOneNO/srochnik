@@ -1753,11 +1753,13 @@ function updateHpHint() {
   if (state.hp >= state.maxHp) {
     els.hpHint.textContent = 'полностью восстановлено';
   } else {
-    const wait = Math.max(0, state.lastHpAt + HP_MS - Date.now());
-    const timer = `+1 через ${fmtClock(wait)}`;
-    els.hpHint.textContent = state.hp < 25 ? `❕ доход снижен · ${timer}` : timer;
+    const missing = Math.max(0, Math.ceil(state.maxHp - state.hp));
+    const wait = Math.max(0, state.lastHpAt + missing * HP_MS - Date.now());
+    const timer = `Полное восстановление — ${fmtClock(wait)}`;
+    els.hpHint.textContent = state.hp < 25 ? `❕ ${timer}` : timer;
   }
   els.hpHint.classList.toggle('is-alert', state.hp < 25);
+  els.hpHint.title = state.hp < 25 ? 'Доход снижен из-за низкого здоровья' : '';
 }
 
 function renderHero() {
