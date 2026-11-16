@@ -990,6 +990,165 @@ const ACHIEVEMENTS = [
     desc: 'Достичь уровня S',
     reward: { money: 300 },
     check: () => rankIndexFor(state.xp) >= 6
+  },
+  {
+    id: 'rankE',
+    icon: '⭐',
+    title: 'Уровень E',
+    desc: 'Дослужиться до уровня E',
+    reward: { money: 20 },
+    check: () => rankIndexFor(state.xp, state.contract) >= 1
+  },
+  {
+    id: 'rankC',
+    icon: '🎗️',
+    title: 'Уровень C',
+    desc: 'Дослужиться до уровня C',
+    reward: { money: 80 },
+    check: () => rankIndexFor(state.xp, state.contract) >= 3
+  },
+  {
+    id: 'rankB',
+    icon: '🏵️',
+    title: 'Уровень B',
+    desc: 'Дослужиться до уровня B',
+    reward: { money: 150, morale: 5 },
+    check: () => rankIndexFor(state.xp, state.contract) >= 4
+  },
+  {
+    id: 'charge10',
+    icon: '🏃',
+    title: 'Бегун',
+    desc: 'Сходить на зарядку 10 раз',
+    reward: { money: 60 },
+    progress: () => [Math.min(state.stats.byAction?.charge || 0, 10), 10],
+    check: () => (state.stats.byAction?.charge || 0) >= 10
+  },
+  {
+    id: 'drill10',
+    icon: '🎖️',
+    title: 'Строевик',
+    desc: 'Отчеканить шаг 10 раз',
+    reward: { money: 80, morale: 5 },
+    progress: () => [Math.min(state.stats.byAction?.drill || 0, 10), 10],
+    check: () => (state.stats.byAction?.drill || 0) >= 10
+  },
+  {
+    id: 'mentor5',
+    icon: '🧑‍🏫',
+    title: 'Наставник',
+    desc: 'Обучить молодых 5 раз',
+    reward: { money: 70, morale: 5 },
+    progress: () => [Math.min(state.stats.byAction?.mentor || 0, 5), 5],
+    check: () => (state.stats.byAction?.mentor || 0) >= 5
+  },
+  {
+    id: 'help10',
+    icon: '🤝',
+    title: 'Правая рука',
+    desc: 'Помочь прапорщику 10 раз',
+    reward: { money: 90 },
+    progress: () => [Math.min(state.stats.byAction?.help || 0, 10), 10],
+    check: () => (state.stats.byAction?.help || 0) >= 10
+  },
+  {
+    id: 'duties10',
+    icon: '🧹',
+    title: 'Наряд вне очереди',
+    desc: 'Сходить в наряд 10 раз',
+    reward: { money: 110 },
+    progress: () => [Math.min(state.stats.duties || 0, 10), 10],
+    check: () => (state.stats.duties || 0) >= 10
+  },
+  {
+    id: 'hours100',
+    icon: '⏳',
+    title: 'Служака',
+    desc: 'Отслужить 100 игровых часов',
+    reward: { money: 90, morale: 5 },
+    progress: () => [Math.min(state.stats.hours || 0, 100), 100],
+    check: () => (state.stats.hours || 0) >= 100
+  },
+  {
+    id: 'earn2500',
+    icon: '🏦',
+    title: 'Заслуженный доход',
+    desc: 'Заработать 2 500 ₽ за службу',
+    reward: { money: 150 },
+    progress: () => [Math.min(state.stats.totalEarned || 0, 2500), 2500],
+    check: () => (state.stats.totalEarned || 0) >= 2500
+  },
+  {
+    id: 'rich2',
+    icon: '💎',
+    title: 'Богатый боец',
+    desc: 'Накопить 2 000 ₽',
+    reward: { money: 180 },
+    progress: () => [Math.min(state.stats.bestMoney || 0, 2000), 2000],
+    check: () => (state.stats.bestMoney || 0) >= 2000
+  },
+  {
+    id: 'events15',
+    icon: '🎰',
+    title: 'Счастливчик',
+    desc: 'Пережить 15 событий',
+    reward: { money: 100 },
+    progress: () => [Math.min(state.stats.events || 0, 15), 15],
+    check: () => (state.stats.events || 0) >= 15
+  },
+  {
+    id: 'buys20',
+    icon: '🛍️',
+    title: 'Хозяин чипка',
+    desc: 'Купить 20 товаров',
+    reward: { money: 110 },
+    progress: () => [Math.min(state.stats.buys || 0, 20), 20],
+    check: () => (state.stats.buys || 0) >= 20
+  },
+  {
+    id: 'package5',
+    icon: '📦',
+    title: 'Посылочный король',
+    desc: 'Получить 5 посылок из дома',
+    reward: { money: 80 },
+    progress: () => [Math.min(state.stats.packages || 0, 5), 5],
+    check: () => (state.stats.packages || 0) >= 5
+  },
+  {
+    id: 'leave3',
+    icon: '🚌',
+    title: 'Дом, милый дом',
+    desc: 'Сходить в увольнительную 3 раза',
+    reward: { money: 130 },
+    progress: () => [Math.min(state.stats.leaves || 0, 3), 3],
+    check: () => (state.stats.leaves || 0) >= 3
+  },
+  {
+    id: 'streak7',
+    icon: '🔥',
+    title: 'Верный уставу',
+    desc: 'Заходить 7 дней подряд',
+    reward: { money: 120, morale: 5 },
+    progress: () => [Math.min(state.streak?.count || 0, 7), 7],
+    check: () => (state.streak?.count || 0) >= 7
+  },
+  {
+    id: 'collector',
+    icon: '🎒',
+    title: 'Запасливый',
+    desc: 'Держать в инвентаре 5 разных предметов',
+    reward: { money: 100 },
+    progress: () => [Math.min(Object.values(state.inventory || {}).filter((n) => Number(n) > 0).length, 5), 5],
+    check: () => Object.values(state.inventory || {}).filter((n) => Number(n) > 0).length >= 5
+  },
+  {
+    id: 'actions50',
+    icon: '🥇',
+    title: 'Полсотни дел',
+    desc: 'Выполнить 50 действий',
+    reward: { money: 140, morale: 10 },
+    progress: () => [Math.min(state.stats.actionsTotal || 0, 50), 50],
+    check: () => (state.stats.actionsTotal || 0) >= 50
   }
 ];
 
@@ -3744,92 +3903,6 @@ function seedLog() {
   });
 }
 
-// Масштабируем карту без перемещения плоскости.
-function bindMapZoom() {
-  const stage = els.mapStage;
-  const content = $('#mapZoomContent');
-  const resetButton = $('#mapResetZoom');
-  const resetLabel = $('#mapResetLabel');
-  if (!stage || !content) return;
-  let scale = 1;
-  let pinch = null;
-  let suppressClickUntil = 0;
-  let applyFrame = 0;
-
-  function applyNow() {
-    // Zoom меняет размеры при раскладке, а не растягивает закэшированный растр.
-    // Это сохраняет чёткость текста и значков после окончания жеста.
-    content.style.zoom = String(scale);
-    content.classList.toggle('is-scaled', Math.abs(scale - 1) > .001);
-    content.style.width = `${stage.clientWidth}px`;
-    content.style.height = `${stage.clientHeight}px`;
-    content.style.left = `${stage.clientWidth * (1 - scale) / (2 * scale)}px`;
-    content.style.top = `${stage.clientHeight * (1 - scale) / (2 * scale)}px`;
-    const changed = Math.abs(scale - 1) > .001;
-    resetButton?.classList.toggle('is-changed', changed);
-    if (resetLabel) resetLabel.setAttribute('aria-hidden', String(!changed));
-  }
-
-  // Жесты могут приходить чаще частоты экрана. Объединяем несколько
-  // изменений в один layout/paint, чтобы не перегружать мобильный браузер.
-  function apply() {
-    if (applyFrame) return;
-    applyFrame = requestAnimationFrame(() => {
-      applyFrame = 0;
-      applyNow();
-    });
-  }
-
-  function zoomAt(next, clientX, clientY) {
-    const rect = stage.getBoundingClientRect();
-    next = clamp(next, 0.1, 20);
-    scale = next;
-    apply();
-  }
-
-  stage.addEventListener('wheel', (event) => {
-    event.preventDefault();
-    zoomAt(scale * Math.exp(-event.deltaY * .0015), event.clientX, event.clientY);
-  }, { passive: false });
-
-  resetButton?.addEventListener('click', () => {
-    scale = 1;
-    apply();
-  });
-
-  stage.addEventListener('touchstart', (event) => {
-    if (event.touches.length !== 2) return;
-    const [a, b] = event.touches;
-    pinch = { distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), scale };
-    suppressClickUntil = Date.now() + 500;
-  }, { passive: true });
-
-  stage.addEventListener('touchmove', (event) => {
-    if (!pinch || event.touches.length !== 2) return;
-    event.preventDefault();
-    const [a, b] = event.touches;
-    const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    if (pinch.distance > 0) zoomAt(pinch.scale * distance / pinch.distance, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
-    suppressClickUntil = Date.now() + 500;
-  }, { passive: false });
-
-  const endPinch = (event) => {
-    if (pinch && event.touches.length < 2) {
-      pinch = null;
-      suppressClickUntil = Date.now() + 500;
-    }
-  };
-  stage.addEventListener('touchend', endPinch);
-  stage.addEventListener('touchcancel', endPinch);
-  stage.addEventListener('click', (event) => {
-    if (Date.now() < suppressClickUntil) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
-  }, true);
-  window.addEventListener('resize', apply);
-}
-
 function bindEvents() {
   $('#activityTop')?.addEventListener('click', () => { setTab('actions'); haptic(); });
   $('#clearArchiveBtn')?.addEventListener('click', () => openModal((el) => {
@@ -3853,7 +3926,6 @@ function bindEvents() {
     renderSettings();
     save();
   }));
-  bindMapZoom();
   $$('[data-back]').forEach((button) => { button.textContent = '← Гарнизон'; });
   const energyButton = $('#energyDetailsBtn');
   const energyPopover = $('#energyPopover');
