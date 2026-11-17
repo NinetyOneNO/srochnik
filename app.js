@@ -1194,6 +1194,7 @@ function defaultState() {
     saveVersion: 2,
     name: user?.first_name?.trim() || 'Срочник',
     avatar: '',
+    avatarMini: '',
     xp: 0,
     money: 120,
     energy: 100,
@@ -1245,6 +1246,12 @@ function defaultState() {
   };
 }
 
+function safeAvatar(value, limit = 200000) {
+  return typeof value === 'string' && value.length <= limit && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value)
+    ? value
+    : '';
+}
+
 function loadState(rawOverride) {
   const base = defaultState();
   try {
@@ -1260,7 +1267,8 @@ function loadState(rawOverride) {
       ...base,
       ...saved,
       name: saved.name || base.name,
-      avatar: typeof saved.avatar === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(saved.avatar) && saved.avatar.length <= 200000 ? saved.avatar : '',
+      avatar: safeAvatar(saved.avatar),
+      avatarMini: safeAvatar(saved.avatarMini, 40000),
       daily: {
         ...base.daily,
         ...(saved.daily || {}),
@@ -2698,12 +2706,16 @@ function cloudEntry(entry) {
   const xp = Number(entry.xp) || 0;
   const contract = Boolean(entry.contract);
   const rank = RANKS[rankIndexFor(xp, contract)];
+  const isPlayer = Boolean(entry.isMe);
   return {
     name: entry.name || 'Срочник',
     emoji: rank.emoji,
+    avatar: isPlayer
+      ? (safeAvatar(state.avatarMini, 40000) || safeAvatar(state.avatar))
+      : safeAvatar(entry.avatar, 40000),
     xp,
     rankTitle: rank.title,
-    isPlayer: Boolean(entry.isMe),
+    isPlayer,
     serviceDays: Number(entry.serviceDays) || 0,
     place: Number(entry.place) || 0
   };
@@ -2719,6 +2731,7 @@ function leaderboardEntries() {
     return {
       name: bot.name,
       emoji: bot.emoji,
+      avatar: '',
       xp,
       rankTitle: RANKS[rankIndexFor(xp, true)].title,
       isPlayer: false
@@ -2729,6 +2742,7 @@ function leaderboardEntries() {
   const player = {
     name: state.name,
     emoji: myRank.emoji,
+    avatar: safeAvatar(state.avatarMini, 40000) || safeAvatar(state.avatar),
     xp: state.xp,
     rankTitle: myRank.title,
     isPlayer: true
@@ -2869,7 +2883,7 @@ function renderLeaderboard(el) {
     return `
       <li class="lb-row ${entry.isPlayer ? 'is-me' : ''}">
         <span class="lb-place">${medal}</span>
-        <span class="lb-avatar" aria-hidden="true">${entry.emoji}</span>
+        <span class="lb-avatar"${entry.avatar ? '' : ' aria-hidden="true"'}>${entry.avatar ? `<img src="${entry.avatar}" alt="" loading="lazy" draggable="false" />` : entry.emoji}</span>
         <span class="lb-info">
           <b>${escapeHtml(entry.name)}${entry.isPlayer ? ' · это ты' : ''}</b>
           <span>${details}</span>
@@ -3515,7 +3529,7 @@ let profileAvatarDraft = null;
 function renderProfileSheet(el, options = {}) {
   const required = Boolean(options.required);
   const focusName = options.focusName !== false;
-  const draft = { value: state.avatar, render: null };
+  const draft = { value: state.avatar, mini: state.avatarMini, render: null };
   profileAvatarDraft = draft;
 
   const preview = (value) => value ? `<img src="${value}" alt="Аватарка бойца">` : '🪖';
@@ -3552,6 +3566,7 @@ function renderProfileSheet(el, options = {}) {
   $('#avatarPick', el)?.addEventListener('click', () => els.avatarInput?.click());
   $('#avatarRemove', el)?.addEventListener('click', () => {
     draft.value = '';
+    draft.mini = '';
     syncAvatar();
     haptic();
   });
@@ -3565,6 +3580,7 @@ function renderProfileSheet(el, options = {}) {
     state.name = name;
     state.nameChosen = true;
     state.avatar = draft.value;
+    state.avatarMini = draft.mini;
     renderAvatar(true);
     renderAll();
     save();
@@ -3578,10 +3594,27 @@ function renderProfileSheet(el, options = {}) {
 }
 
 const AVATAR_SIZE = 256;
+const AVATAR_MINI_SIZE = 96;
 const AVATAR_MAX_SOURCE = 12 * 1024 * 1024;
 
-function loadAvatarBitmap(file) {
-  if (typeof createImageBitmap === 'function') {
+function drawAvatar(source, size, quality) {
+  const width = source.width || source.naturalWidth || 0;
+  const height = source.height || source.naturalHeight || 0;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Браузер не поддерживает обработку фото');
+  ctx.fillStyle = '#171d11';
+  ctx.fillRect(0, 0, size, size);
+  const scale = Math.max(size / width, size / height);
+  const drawWidth = width * scale;
+  const drawHeight = height * scale;
+  ctx.drawImage(source, (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+function loadAvatarBitmap(file) {  if (typeof createImageBitmap === 'function') {
     return createImageBitmap(file, { imageOrientation: 'from-image' })
       .catch(() => createImageBitmap(file));
   }
@@ -3606,33 +3639,40 @@ async function fileToAvatar(file) {
   const width = source.width || source.naturalWidth || 0;
   const height = source.height || source.naturalHeight || 0;
   if (!width || !height) throw new Error('Не удалось прочитать изображение');
-
-  const canvas = document.createElement('canvas');
-  canvas.width = AVATAR_SIZE;
-  canvas.height = AVATAR_SIZE;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Браузер не поддерживает обработку фото');
-  ctx.fillStyle = '#171d11';
-  ctx.fillRect(0, 0, AVATAR_SIZE, AVATAR_SIZE);
-  const scale = Math.max(AVATAR_SIZE / width, AVATAR_SIZE / height);
-  const drawWidth = width * scale;
-  const drawHeight = height * scale;
-  ctx.drawImage(source, (AVATAR_SIZE - drawWidth) / 2, (AVATAR_SIZE - drawHeight) / 2, drawWidth, drawHeight);
+  const avatar = drawAvatar(source, AVATAR_SIZE, 0.86);
+  const avatarMini = drawAvatar(source, AVATAR_MINI_SIZE, 0.8);
   if (typeof source.close === 'function') source.close();
-  return canvas.toDataURL('image/jpeg', 0.86);
+  return { avatar, avatarMini };
+}
+
+// Старые сохранения хранили только большую аватарку — готовим мини-копию
+// для рейтинга один раз при запуске.
+function ensureAvatarMini() {
+  if (!state.avatar || state.avatarMini) return;
+  const img = new Image();
+  img.onload = () => {
+    if (!state.avatar || state.avatarMini) return;
+    try {
+      state.avatarMini = drawAvatar(img, AVATAR_MINI_SIZE, 0.8);
+      save();
+    } catch { /* ignore */ }
+  };
+  img.src = state.avatar;
 }
 
 async function applyAvatarFile(file) {
   try {
-    const data = await fileToAvatar(file);
+    const result = await fileToAvatar(file);
     haptic('success');
     if (profileAvatarDraft) {
-      profileAvatarDraft.value = data;
+      profileAvatarDraft.value = result.avatar;
+      profileAvatarDraft.mini = result.avatarMini;
       profileAvatarDraft.render?.();
       toast('Фото готово — нажми «Сохранить»', 'info');
       return;
     }
-    state.avatar = data;
+    state.avatar = result.avatar;
+    state.avatarMini = result.avatarMini;
     renderAvatar(true);
     renderAll();
     save();
@@ -4565,6 +4605,7 @@ async function boot() {
   checkAchievements(true);
   setTab('map');
   save();
+  ensureAvatarMini();
 
 
   scheduleGameTick();
