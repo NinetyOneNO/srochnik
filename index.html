@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Unbounded:wght@600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=210" />
+  <link rel="stylesheet" href="styles.css?v=215" />
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
@@ -18,7 +18,7 @@
     <header class="topbar">
       <div class="topbar-main">
         <button class="brand profile-chip" id="profileTop" aria-label="Открыть профиль бойца">
-          <div class="brand-mark">🪖</div>
+          <div class="brand-mark" id="topAvatar" aria-hidden="true">🪖</div>
           <div class="brand-text">
             <div class="brand-title" id="topName">Срочник</div>
             <div class="brand-sub" id="topLevel">F</div>
@@ -101,7 +101,7 @@
 
         <article class="hero-card">
           <div class="hero-top">
-            <div class="avatar" aria-hidden="true">🪖<span class="avatar-star">★</span></div>
+            <button class="avatar" id="avatarBtn" type="button" aria-label="Поставить свою аватарку"><span class="avatar-media" id="avatarMedia">🪖</span><span class="avatar-star" aria-hidden="true">★</span></button>
             <div class="hero-id">
               <div class="eyebrow">личное дело</div>
               <h1><span id="heroName">Срочник</span> <button class="name-edit" id="editNameBtn" aria-label="Изменить ник">✎</button></h1>
@@ -164,12 +164,18 @@
             <p class="panel-sub">Игровой день — 12 часов. Занятия тратят энергию и занимают время.</p>
           </div>
         </div>
-        <div class="location-filters" id="locationFilters" aria-label="Фильтр по расположению"></div>
         <div class="duty-picker" id="dutyPicker"></div>
-        <div class="duty-options duty-location-grid" id="dutyOptions"></div>
+        <section class="side-actions" id="sideActions">
+          <div class="side-actions-head">
+            <h3>Свободные минуты</h3>
+            <p>Короткие дела на 1 минуту — доступны всегда</p>
+          </div>
+          <div class="action-grid side-grid" id="sideActionGrid"></div>
+        </section>
+        <div class="location-filters" id="locationFilters" aria-label="Фильтр занятий"></div>
         <p class="filter-empty" id="filterEmpty" hidden>Для этого расположения нет занятий в казарме.</p>
         <div class="action-grid" id="actionGrid"></div>
-        <p class="tip">💡 Пока идёт одно занятие, остальные недоступны. Звонок маме — лучший способ поднять боевой дух.</p>
+        <p class="tip">💡 Пока идёт занятие, основные дела недоступны, а свободные минуты всегда под рукой.</p>
       </section>
 
       <!-- ================= ЧИПОК ================= -->
@@ -491,6 +497,8 @@
     <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
   </div>
 
-  <script src="app.js?v=210"></script>
+  <input type="file" id="avatarInput" class="avatar-input" accept="image/*" />
+
+  <script src="app.js?v=215"></script>
 </body>
 </html>

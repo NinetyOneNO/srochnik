@@ -497,6 +497,43 @@ const ACTIONS = [
   { id: 'archive', icon: '🗃️', title: 'Навести порядок в архиве', desc: 'Сверить и убрать папки', energy: 30, xp: [15, 20], money: [32, 45], morale: 0, hours: 2, baseMinutes: 45, flavor: ['Архив приведён в порядок.'] }
 ];
 
+// Свободные минуты: доступны всегда, идут параллельно основному занятию
+// в отдельном слоте state.sideBusy и не трогают state.busy.
+const SIDE_ACTIONS = [
+  {
+    id: 'sideStudy',
+    icon: '📖',
+    title: 'Полистать устав',
+    desc: 'Подтянуть знания перед проверкой',
+    energy: 6,
+    xp: [14, 20],
+    durationMinutes: 1,
+    flavor: ['Устав прочитан до середины. Уже что-то.', 'Пара страниц — и на душе по-уставному спокойно.']
+  },
+  {
+    id: 'sideEarn',
+    icon: '🧰',
+    title: 'Подработать у прапорщика',
+    desc: 'Мелкая работа за наличные',
+    energy: 8,
+    xp: [3, 5],
+    money: [24, 36],
+    durationMinutes: 1,
+    flavor: ['Прапорщик расплатился без напоминаний. Чудо.', 'Работа мелкая, зато деньги настоящие.']
+  },
+  {
+    id: 'sideSong',
+    icon: '🎸',
+    title: 'Спеть под гитару',
+    desc: 'Поднять настроение роте',
+    energy: 3,
+    xp: [3, 5],
+    morale: 8,
+    durationMinutes: 1,
+    flavor: ['Рота подпевала — даже старшина.', 'Гитара нашлась, струны тоже. Настроение вверх.']
+  }
+];
+
 function dutyType() {
   return DUTIES[state.duty?.type] ? state.duty.type : 'kitchen';
 }
@@ -1156,6 +1193,7 @@ function defaultState() {
   return {
     saveVersion: 2,
     name: user?.first_name?.trim() || 'Срочник',
+    avatar: '',
     xp: 0,
     money: 120,
     energy: 100,
@@ -1165,6 +1203,7 @@ function defaultState() {
     morale: 75,
     cooldowns: {},
     busy: { id: null, title: '', icon: '', until: 0, startedAt: 0, totalMs: 0 },
+    sideBusy: { id: null, title: '', icon: '', until: 0, startedAt: 0, reward: null },
     purchases: { boots: 0, pillow: 0, kettle: 0, locker: 0, laces: 0, watch: 0, planner: 0 },
     duty: { date: gameDayKeyFrom(Date.now(), Date.now()), type: 'kitchen' },
     package: { date: gameDayKeyFrom(Date.now(), Date.now()), sentAt: 0, readyAt: 0, claimed: false },
@@ -1215,10 +1254,13 @@ function loadState(rawOverride) {
     if (saved.saveVersion !== 2) return base;
     const savedBusy = saved.busy || {};
     const knownBusy = savedBusy.id ? ACTIONS.find((a) => a.id === savedBusy.id) : null;
+    const savedSide = saved.sideBusy || {};
+    const knownSide = savedSide.id ? SIDE_ACTIONS.find((a) => a.id === savedSide.id) : null;
     const merged = {
       ...base,
       ...saved,
       name: saved.name || base.name,
+      avatar: typeof saved.avatar === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(saved.avatar) && saved.avatar.length <= 200000 ? saved.avatar : '',
       daily: {
         ...base.daily,
         ...(saved.daily || {}),
@@ -1247,6 +1289,14 @@ function loadState(rawOverride) {
         totalMs: Number(savedBusy.totalMs) || 0,
         reward: savedBusy.reward || null,
         rewardVersion: savedBusy.rewardVersion || 0
+      },
+      sideBusy: {
+        id: savedSide.id || null,
+        title: savedSide.title || knownSide?.title || (savedSide.id ? 'Свободное дело' : ''),
+        icon: savedSide.icon || knownSide?.icon || (savedSide.id ? '⏳' : ''),
+        until: Number(savedSide.until) || 0,
+        startedAt: Number(savedSide.startedAt) || 0,
+        reward: savedSide.reward || null
       },
       duty: {
         date: saved.duty?.date || base.duty.date,
@@ -1648,6 +1698,17 @@ function busyBlockerFor() {
   return busyAction();
 }
 
+function sideBusyAction() {
+  if (!state.sideBusy?.id) return null;
+  if (state.sideBusy.until <= Date.now()) return null;
+  return {
+    id: state.sideBusy.id,
+    title: state.sideBusy.title || 'Свободное дело',
+    icon: state.sideBusy.icon || '⏳',
+    until: state.sideBusy.until
+  };
+}
+
 function requireFree() {
   const blocker = busyAction();
   if (!blocker) return true;
@@ -1697,6 +1758,10 @@ const els = {
   topLevel: $('#topLevel'),
   profileTop: $('#profileTop'),
   editNameBtn: $('#editNameBtn'),
+  avatarBtn: $('#avatarBtn'),
+  avatarMedia: $('#avatarMedia'),
+  topAvatar: $('#topAvatar'),
+  avatarInput: $('#avatarInput'),
   shopMoney: $('#shopMoney'),
   shopTrips: $('#shopTrips'),
   shopSpeed: $('#shopSpeed'),
@@ -1762,7 +1827,21 @@ function updateHpHint() {
   els.hpHint.title = state.hp < 25 ? 'Доход снижен из-за низкого здоровья' : '';
 }
 
+let renderedAvatar = null;
+
+function renderAvatar(force = false) {
+  if (!force && renderedAvatar === state.avatar) return;
+  renderedAvatar = state.avatar;
+  const markup = state.avatar
+    ? `<img src="${state.avatar}" alt="" draggable="false" />`
+    : '🪖';
+  if (els.avatarMedia) els.avatarMedia.innerHTML = markup;
+  if (els.topAvatar) els.topAvatar.innerHTML = markup;
+  els.avatarBtn?.classList.toggle('has-photo', Boolean(state.avatar));
+}
+
 function renderHero() {
+  renderAvatar();
   const r = rankProgress();
   els.heroName.textContent = state.name;
   els.rankBadge.textContent = `Ранг ${r.rank.title}`;
@@ -2352,17 +2431,8 @@ function claimQuest() {
 let locationFilter = null;
 function renderDutyPicker() {
   if (!els.dutyPicker) return;
-  const location = LOCATIONS.find((entry) => entry.id === locationFilter);
-  const duties = location ? location.duties : ['plaz', 'kpp', 'kitchen', 'sklad'];
   const filters = $('#locationFilters');
   if (filters) filters.innerHTML = LOCATIONS.map((entry) => `<button type="button" data-location-filter="${entry.id}" class="${entry.id === locationFilter ? 'is-active' : ''}" aria-pressed="${entry.id === locationFilter}">${entry.icon} ${entry.title}</button>`).join('');
-  const options = $('#dutyOptions');
-  if (options) {
-    options.hidden = duties.length === 0;
-    options.innerHTML = duties.map((key) => { const item = DUTIES[key]; return `
-      <button class="duty-option" data-duty-start="${key}">${item.icon} ${item.title}</button>
-    `; }).join('');
-  }
   renderCurrentDuty();
 }
 
@@ -2385,25 +2455,15 @@ function renderCurrentDuty() {
 // У нарядов общий идентификатор действия, поэтому активный определяется по виду.
 function updateDutyStatuses() {
   const active = busyAction();
-  $$('#dutyOptions [data-duty-start]').forEach((button) => {
-    const isActive = active?.id === 'duty' && state.duty?.type === button.dataset.dutyStart;
-    button.classList.toggle('is-active', Boolean(isActive));
-    button.disabled = Boolean(active && !isActive);
-    const item = DUTIES[button.dataset.dutyStart];
-    button.textContent = `${item.icon} ${item.title}${isActive ? ` · ${fmtDuration(active.until - Date.now())}` : ''}`;
+  const activeDuty = active?.id === 'duty' ? state.duty?.type : null;
+  $$('[data-action="duty"]').forEach((card) => {
+    const type = card.dataset.dutyType;
+    const isActive = Boolean(activeDuty) && (!type || type === activeDuty);
+    const status = $('.action-status', card);
+    if (!status) return;
+    if (isActive) status.textContent = 'выполняется';
+    else if (activeDuty && status.textContent === 'выполняется') status.textContent = 'занято';
   });
-}
-
-function chooseDuty(type) {
-  if (!DUTIES[type]) return;
-  if (!requireFree()) return;
-
-  state.duty = { date: gameDayKey(), type };
-  renderDutyPicker();
-  renderActions();
-  save();
-  toast(`${DUTIES[type].icon} Наряд дня: ${DUTIES[type].title}`, 'info');
-  haptic('success');
 }
 
 /* ---------- log render ---------- */
@@ -2500,6 +2560,7 @@ function renderAll() {
   renderKppCare();
   renderQuest();
   renderDutyPicker();
+  renderSideActions();
   renderStaff();
   renderShopPanel();
   renderCanteen();
@@ -2967,7 +3028,7 @@ function actionRewardLabel(action) {
   return 'опыт';
 }
 
-function actionCardHtml(action) {
+function actionCardHtml(action, dutyKey = null) {
   const chips = [
     `<span class="chip-cost">⚡ ${action.energy}</span>`,
     ...(ACTION_HEALTH_COST[action.id] ? [`<span class="chip-health">❤️ −${ACTION_HEALTH_COST[action.id]}</span>`] : []),
@@ -2976,7 +3037,7 @@ function actionCardHtml(action) {
   ];
 
   return `
-    <button class="action-card" data-action="${action.id}" aria-label="${action.title}">
+    <button class="action-card" data-action="${action.id}"${dutyKey ? ` data-duty-type="${dutyKey}"` : ''} aria-label="${action.title}">
       <span class="action-icon" aria-hidden="true">${action.icon}</span>
       <span class="action-main">
         <span class="action-title">${action.title}</span>
@@ -2992,10 +3053,81 @@ function actionCardHtml(action) {
   `;
 }
 
-function fillActionGrid(container, actions) {
+function sideCardHtml(side) {
+  const chips = [
+    `<span class="chip-cost">⚡ ${side.energy}</span>`,
+    `<span class="chip-hours">⏱ ${fmtDuration(side.durationMinutes * 60000)}</span>`,
+    `<span>+${side.xp[0]}–${side.xp[1]} XP</span>`
+  ];
+  const reward = side.money
+    ? `+${side.money[0]}–${side.money[1]} ₽`
+    : side.morale ? `+${side.morale} 🔥`
+      : side.hp ? `+${side.hp} ❤️` : 'опыт';
+
+  return `
+    <button class="action-card side-card" data-side-action="${side.id}" aria-label="${side.title}">
+      <span class="action-icon" aria-hidden="true">${side.icon}</span>
+      <span class="action-main">
+        <span class="action-title">${side.title}</span>
+        <span class="action-desc">${side.desc}</span>
+        <span class="action-chips">${chips.join('')}</span>
+      </span>
+      <span class="action-side">
+        <span class="action-reward">${reward}</span>
+        <span class="action-status">готово</span>
+      </span>
+      <span class="cd-line" aria-hidden="true"></span>
+    </button>
+  `;
+}
+
+function renderSideActions() {
+  const section = $('#sideActions');
+  const grid = $('#sideActionGrid');
+  if (!section || !grid) return;
+  section.hidden = false;
+  grid.innerHTML = SIDE_ACTIONS.map(sideCardHtml).join('');
+  updateSideActionStates();
+}
+
+function updateSideActionStates() {
+  const grid = $('#sideActionGrid');
+  if (!grid) return;
+  const now = Date.now();
+  const sideActive = sideBusyAction();
+  SIDE_ACTIONS.forEach((side) => {
+    const running = sideActive?.id === side.id;
+    const blocked = Boolean(sideActive) && !running;
+    const lowEnergy = state.energy < side.energy;
+    grid.querySelectorAll(`[data-side-action="${side.id}"]`).forEach((root) => {
+      root.classList.toggle('is-cd', running);
+      root.classList.toggle('is-blocked', blocked);
+      root.classList.toggle('is-locked', !running && !blocked && lowEnergy);
+      const status = $('.action-status', root);
+      const line = $('.cd-line', root);
+      if (running) {
+        const total = side.durationMinutes * 60000;
+        const remain = Math.max(0, sideActive.until - now);
+        status.textContent = `⏱ ${fmtClock(remain)}`;
+        line.style.width = `${clamp((1 - remain / total) * 100, 0, 100)}%`;
+      } else if (blocked) {
+        status.textContent = 'занято';
+        line.style.width = '0%';
+      } else {
+        status.textContent = lowEnergy ? `нужно ⚡${side.energy}` : 'готово';
+        line.style.width = '0%';
+      }
+    });
+  });
+}
+
+function fillActionGrid(container, actions, dutyKey = null) {
   if (!container) return;
 
-  container.innerHTML = actions.map((action) => actionCardHtml(actionFor(action.id))).join('');
+  container.innerHTML = actions.map((action) => {
+    if (action.id === 'duty' && dutyKey) return actionCardHtml({ ...actionFor('duty'), ...DUTIES[dutyKey] }, dutyKey);
+    return actionCardHtml(actionFor(action.id));
+  }).join('');
 
   actions.forEach((base) => {
     container.querySelectorAll(`[data-action="${base.id}"]`).forEach((root) => {
@@ -3013,18 +3145,18 @@ function fillActionGrid(container, actions) {
 function renderActions() {
   cardEls.clear();
 
-  const duty = dutyType();
-
   const location = LOCATIONS.find((entry) => entry.id === locationFilter);
   const barracksActions = ACTIONS.filter((action) => action.id !== 'duty' && (!location || location.actions.includes(action.id)))
     .sort((a, b) => activityDurationMs(actionFor(a.id)) - activityDurationMs(actionFor(b.id)));
   fillActionGrid(els.actionGrid, barracksActions);
+  renderSideActions();
   const empty = $('#filterEmpty');
-  if (empty) empty.hidden = !location || barracksActions.length > 0 || location.duties.length > 0;
+  if (empty) empty.hidden = !location || barracksActions.length > 0;
   const grids = { plaz: els.plazGrid, kpp: els.kppGrid, canteen: els.canteenGrid, shop: els.shopGrid, sickbay: els.sickbayGrid, staff: els.staffGrid };
   Object.entries(grids).forEach(([id, grid]) => {
     const location = LOCATIONS.find((entry) => entry.id === id);
-    fillActionGrid(grid, ACTIONS.filter((action) => location.actions.includes(action.id) || (action.id === 'duty' && location.duties.includes(duty))));
+    const dutyKey = location.duties[0] || null;
+    fillActionGrid(grid, ACTIONS.filter((action) => location.actions.includes(action.id) || (action.id === 'duty' && location.duties.length > 0)), dutyKey);
   });
 
   updateActionStates();
@@ -3068,6 +3200,7 @@ function updateActionStates() {
       }
     });
   });
+  updateSideActionStates();
 }
 
 /* ---------- xp / level ---------- */
@@ -3155,6 +3288,106 @@ function triggerEvent() {
 
 /* ---------- action execution ---------- */
 
+function doSideAction(id) {
+  const side = SIDE_ACTIONS.find((entry) => entry.id === id);
+  if (!side) return;
+
+  const activeSide = sideBusyAction();
+  if (activeSide) {
+    toast(`⏳ Сначала закончите: ${activeSide.title.toLowerCase()}`, 'info');
+    haptic('error');
+    return;
+  }
+
+  if (state.energy < side.energy) {
+    toast('⚡ Не хватает энергии — отдохни или загляни в столовую', 'bad');
+    haptic('error');
+    return;
+  }
+
+  const now = Date.now();
+  if (side.energy && state.energy >= state.maxEnergy) state.lastEnergyAt = now;
+  state.energy -= side.energy;
+
+  const durationMs = side.durationMinutes * 60000;
+  state.sideBusy = {
+    id,
+    title: side.title,
+    icon: side.icon,
+    startedAt: now,
+    until: now + durationMs,
+    reward: {
+      xpGain: rand(side.xp[0], side.xp[1]),
+      moneyGain: side.money ? rand(side.money[0], side.money[1]) : 0,
+      moraleGain: side.morale || 0,
+      hpGain: side.hp || 0,
+      flavor: pick(side.flavor)
+    }
+  };
+
+  renderAll();
+  save();
+  haptic('success');
+  playSound('success');
+  toast(`${side.icon} ${side.title} начато · ${fmtDuration(durationMs)}`, 'info');
+}
+
+function finishSideAction() {
+  const entry = state.sideBusy;
+  if (!entry?.id) return;
+
+  const side = SIDE_ACTIONS.find((item) => item.id === entry.id);
+  const reward = entry.reward || null;
+  const title = entry.title || side?.title || 'Свободное дело';
+  const icon = entry.icon || side?.icon || '✅';
+  state.sideBusy = { id: null, title: '', icon: '', until: 0, startedAt: 0, reward: null };
+
+  if (!reward) {
+    renderAll();
+    save();
+    return;
+  }
+
+  const gains = [];
+  const xpGain = Number(reward.xpGain) || 0;
+  const moneyGain = Number(reward.moneyGain) || 0;
+
+  if (moneyGain) {
+    state.money += moneyGain;
+    state.stats.totalEarned = (state.stats.totalEarned || 0) + moneyGain;
+    dailyAdd('earn', moneyGain);
+    gains.push(`+${fmt(moneyGain)} ₽`);
+  }
+  if (reward.moraleGain) {
+    state.morale = clamp(state.morale + reward.moraleGain, 0, 100);
+    gains.push(`+${reward.moraleGain} 🔥`);
+  }
+  if (reward.hpGain) {
+    state.hp = clamp(state.hp + reward.hpGain, 0, state.maxHp);
+    gains.push(`+${reward.hpGain} ❤️`);
+  }
+  gains.unshift(`+${xpGain} XP`);
+
+  state.stats.actionsTotal = (state.stats.actionsTotal || 0) + 1;
+  state.stats.byAction = state.stats.byAction || {};
+  state.stats.byAction[entry.id] = (state.stats.byAction[entry.id] || 0) + 1;
+
+  addXp(xpGain);
+  checkAchievements();
+  pushLog({
+    icon,
+    text: reward.flavor || `${title}: готово.`,
+    gains,
+    type: 'good'
+  });
+
+  renderAll();
+  save();
+  haptic('success');
+  playSound('success');
+  toast(`${icon} ${title} выполнено · +${xpGain} XP`, 'good');
+}
+
 function doAction(id) {
   const base = ACTIONS.find((a) => a.id === id);
   if (!base) return;
@@ -3240,6 +3473,7 @@ function showNextModal() {
   const renderer = modalQueue.shift();
 
   if (!renderer) {
+    profileAvatarDraft = null;
     modalOpen = false;
     els.modal.classList.remove('is-open');
     els.modal.setAttribute('aria-hidden', 'true');
@@ -3252,12 +3486,13 @@ function showNextModal() {
   els.modal.classList.add('is-open');
   els.modal.setAttribute('aria-hidden', 'false');
   els.sheet.innerHTML = '';
+  profileAvatarDraft = null;
   renderer(els.sheet);
   els.sheet.scrollTop = 0;
 }
 
 function closeModal() {
-  if (!state.nameChosen && $('#nameForm', els.sheet)) return;
+  if (!state.nameChosen && $('#profileForm', els.sheet)) return;
   showNextModal();
 }
 
@@ -3274,22 +3509,138 @@ function renderLevelSheet(el, rank, gained) {
   `;
 }
 
-function renderNameSheet(el, required = false) {
-  el.innerHTML = `<h3 class="sheet-title">${required ? 'Выбери ник' : 'Изменить ник'}</h3><form id="nameForm"><label class="name-label" for="nameInput">Ник бойца</label><input id="nameInput" class="name-input" maxlength="24" required autocomplete="nickname" value="${escapeHtml(state.name || '')}"><p class="name-error" id="nameError" aria-live="polite"></p><div class="sheet-actions">${required ? '' : '<button class="btn btn-ghost" type="button" data-close>Отмена</button>'}<button class="btn btn-primary" type="submit">Сохранить</button></div></form>`;
-  const form = $('#nameForm', el);
-  const input = $('#nameInput', el);
+// Единый редактор профиля: аватарка и ник.
+let profileAvatarDraft = null;
+
+function renderProfileSheet(el, options = {}) {
+  const required = Boolean(options.required);
+  const focusName = options.focusName !== false;
+  const draft = { value: state.avatar, render: null };
+  profileAvatarDraft = draft;
+
+  const preview = (value) => value ? `<img src="${value}" alt="Аватарка бойца">` : '🪖';
+
+  el.innerHTML = `
+    <h3 class="sheet-title">${required ? 'Знакомство' : 'Профиль бойца'}</h3>
+    <p class="sheet-text">${required ? 'Выбери ник и, если хочешь, поставь свою аватарку.' : 'Аватарка и ник — в одном редакторе.'}</p>
+    <div class="avatar-preview" id="profileAvatarPreview">${preview(draft.value)}</div>
+    <div class="avatar-actions">
+      <button class="btn btn-ghost" type="button" id="avatarPick">${draft.value ? 'Заменить фото' : 'Загрузить фото'}</button>
+      <button class="btn btn-ghost" type="button" id="avatarRemove"${draft.value ? '' : ' hidden'}>Удалить</button>
+    </div>
+    <form id="profileForm">
+      <label class="name-label" for="profileName">Ник бойца</label>
+      <input id="profileName" class="name-input" maxlength="24" required autocomplete="nickname" value="${escapeHtml(state.name || '')}">
+      <p class="name-error" id="profileError" aria-live="polite"></p>
+      <div class="sheet-actions${required ? ' is-single' : ''}">
+        ${required ? '' : '<button class="btn btn-ghost" type="button" data-close>Отмена</button>'}
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  `;
+
+  const syncAvatar = () => {
+    const box = $('#profileAvatarPreview', el);
+    if (box) box.innerHTML = preview(draft.value);
+    const pick = $('#avatarPick', el);
+    if (pick) pick.textContent = draft.value ? 'Заменить фото' : 'Загрузить фото';
+    const remove = $('#avatarRemove', el);
+    if (remove) remove.hidden = !draft.value;
+  };
+  draft.render = syncAvatar;
+
+  $('#avatarPick', el)?.addEventListener('click', () => els.avatarInput?.click());
+  $('#avatarRemove', el)?.addEventListener('click', () => {
+    draft.value = '';
+    syncAvatar();
+    haptic();
+  });
+
+  const form = $('#profileForm', el);
+  const input = $('#profileName', el);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const name = input.value.trim();
-    if (!name) { $('#nameError', el).textContent = 'Введите ник'; input.focus(); return; }
+    if (!name) { $('#profileError', el).textContent = 'Введите ник'; input.focus(); return; }
     state.name = name;
     state.nameChosen = true;
+    state.avatar = draft.value;
+    renderAvatar(true);
     renderAll();
     save();
     closeModal();
+    haptic('success');
+    toast(required ? `Добро пожаловать, ${name}!` : 'Профиль обновлён', 'good');
     if (required) showTutorial();
   });
-  input.focus();
+  input.addEventListener('input', () => { $('#profileError', el).textContent = ''; });
+  if (focusName) input.focus();
+}
+
+const AVATAR_SIZE = 256;
+const AVATAR_MAX_SOURCE = 12 * 1024 * 1024;
+
+function loadAvatarBitmap(file) {
+  if (typeof createImageBitmap === 'function') {
+    return createImageBitmap(file, { imageOrientation: 'from-image' })
+      .catch(() => createImageBitmap(file));
+  }
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не удалось открыть изображение')); };
+    img.src = url;
+  });
+}
+
+async function fileToAvatar(file) {
+  if (!file || !file.type.startsWith('image/')) throw new Error('Выбери файл изображения');
+  if (file.size > AVATAR_MAX_SOURCE) throw new Error('Файл слишком большой — до 12 МБ');
+  let source;
+  try {
+    source = await loadAvatarBitmap(file);
+  } catch {
+    throw new Error('Не удалось открыть фото — подойдёт JPG или PNG');
+  }
+  const width = source.width || source.naturalWidth || 0;
+  const height = source.height || source.naturalHeight || 0;
+  if (!width || !height) throw new Error('Не удалось прочитать изображение');
+
+  const canvas = document.createElement('canvas');
+  canvas.width = AVATAR_SIZE;
+  canvas.height = AVATAR_SIZE;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Браузер не поддерживает обработку фото');
+  ctx.fillStyle = '#171d11';
+  ctx.fillRect(0, 0, AVATAR_SIZE, AVATAR_SIZE);
+  const scale = Math.max(AVATAR_SIZE / width, AVATAR_SIZE / height);
+  const drawWidth = width * scale;
+  const drawHeight = height * scale;
+  ctx.drawImage(source, (AVATAR_SIZE - drawWidth) / 2, (AVATAR_SIZE - drawHeight) / 2, drawWidth, drawHeight);
+  if (typeof source.close === 'function') source.close();
+  return canvas.toDataURL('image/jpeg', 0.86);
+}
+
+async function applyAvatarFile(file) {
+  try {
+    const data = await fileToAvatar(file);
+    haptic('success');
+    if (profileAvatarDraft) {
+      profileAvatarDraft.value = data;
+      profileAvatarDraft.render?.();
+      toast('Фото готово — нажми «Сохранить»', 'info');
+      return;
+    }
+    state.avatar = data;
+    renderAvatar(true);
+    renderAll();
+    save();
+    toast('Аватарка обновлена', 'good');
+  } catch (error) {
+    haptic('error');
+    toast(error?.message || 'Не удалось обработать фото', 'bad');
+  }
 }
 
 function renderEventSheet(el, result) {
@@ -3831,6 +4182,10 @@ function tick() {
     changed = true;
   }
 
+  if (state.sideBusy?.id && state.sideBusy.until <= now) {
+    finishSideAction();
+  }
+
   if (state.energy < state.maxEnergy) {
     const gain = Math.floor((now - state.lastEnergyAt) / ENERGY_MS);
     if (gain > 0) {
@@ -3879,7 +4234,7 @@ function tick() {
 function scheduleGameTick() {
   clearTimeout(gameTickTimer);
   if (document.hidden) return;
-  const active = Boolean(state.busy?.id);
+  const active = Boolean(state.busy?.id) || Boolean(state.sideBusy?.id);
   const actionsOpen = $('[data-panel="actions"]')?.classList.contains('is-active');
   gameTickTimer = window.setTimeout(() => {
     tick();
@@ -3979,12 +4334,24 @@ function bindEvents() {
     renderActions();
   });
   if (els.profileTop) els.profileTop.addEventListener('click', () => setTab('hero'));
-  if (els.editNameBtn) els.editNameBtn.addEventListener('click', () => openModal((el) => renderNameSheet(el, false)));
+  if (els.editNameBtn) els.editNameBtn.addEventListener('click', () => openModal((el) => renderProfileSheet(el, { focusName: true })));
+  if (els.avatarBtn) els.avatarBtn.addEventListener('click', () => { haptic(); playSound('click'); openModal((el) => renderProfileSheet(el, { focusName: false })); });
+  if (els.avatarInput) els.avatarInput.addEventListener('change', () => {
+    const file = els.avatarInput.files?.[0];
+    els.avatarInput.value = '';
+    if (file) applyAvatarFile(file);
+  });
   const actionHost = $('.layout');
   if (actionHost) {
     actionHost.addEventListener('click', (e) => {
+      const side = e.target.closest('[data-side-action]');
+      if (side) {
+        doSideAction(side.dataset.sideAction);
+        return;
+      }
       const card = e.target.closest('[data-action]');
       if (!card) return;
+      if (card.dataset.dutyType) state.duty = { date: gameDayKey(), type: card.dataset.dutyType };
       doAction(card.dataset.action);
     });
   }
@@ -4057,17 +4424,6 @@ function bindEvents() {
   if (els.questBody) {
     els.questBody.addEventListener('click', (e) => {
       if (e.target.closest('[data-claim-quest]')) claimQuest();
-    });
-  }
-
-  const dutyOptions = $('#dutyOptions');
-  if (dutyOptions) {
-    dutyOptions.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-duty-start]');
-      if (!btn || !requireFree()) return;
-      state.duty = { date: gameDayKey(), type: btn.dataset.dutyStart };
-      renderActions();
-      doAction('duty');
     });
   }
 
@@ -4218,7 +4574,7 @@ async function boot() {
     if (document.hidden) return;
     if ($('[data-panel="hero"]')?.classList.contains('is-active')) updateHpHint();
   }, 1000);
-  if (!state.nameChosen) openModal((el) => renderNameSheet(el, true));
+  if (!state.nameChosen) openModal((el) => renderProfileSheet(el, { required: true, focusName: true }));
   else showTutorial();
 }
 
