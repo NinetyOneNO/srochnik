@@ -93,6 +93,11 @@ function fmtDuration(ms) {
   return `${totalMin} мин`;
 }
 
+function fmtSideDuration(ms) {
+  const seconds = Math.max(1, Math.ceil(ms / 1000));
+  return seconds < 60 ? `${seconds} сек` : fmtDuration(ms);
+}
+
 /* ---------- Telegram ---------- */
 
 const tg = window.Telegram?.WebApp || null;
@@ -295,8 +300,8 @@ const DUTIES = {
     icon: '🥔',
     title: 'Наряд на кухню',
     desc: 'Почистить картошку для роты',
-    money: [50, 70],
-    xp: [20, 26],
+    money: [108, 128],
+    xp: [31, 36],
     morale: -1,
     flavor: [
       'Три ведра картошки — и ни одной мозоли.',
@@ -308,8 +313,8 @@ const DUTIES = {
     icon: '🧹',
     title: 'Наряд по плацу',
     desc: 'Подмести плац от листьев',
-    money: [45, 65],
-    xp: [21, 27],
+    money: [105, 124],
+    xp: [33, 38],
     morale: 0,
     flavor: [
       'Плац блестит — даже командир заметил.',
@@ -321,8 +326,8 @@ const DUTIES = {
     icon: '🚧',
     title: 'Наряд на КПП',
     desc: 'Проверять пропуска и здороваться',
-    money: [55, 80],
-    xp: [22, 29],
+    money: [115, 135],
+    xp: [32, 37],
     morale: -2,
     flavor: [
       'Пропуска проверены, скука побеждена.',
@@ -334,8 +339,8 @@ const DUTIES = {
     icon: '📦',
     title: 'Наряд на складе',
     desc: 'Пересчитать имущество',
-    money: [48, 68],
-    xp: [20, 26],
+    money: [108, 126],
+    xp: [31, 36],
     morale: -1,
     flavor: [
       'Имущество сошлось. Почти.',
@@ -352,7 +357,7 @@ const ACTIONS = [
     title: 'Зарядка',
     desc: 'Пробежка вокруг плаца',
     energy: 22,
-    xp: [10, 15],
+    xp: [18, 22],
     money: [0, 0],
     morale: 2,
     hours: 1,
@@ -368,7 +373,7 @@ const ACTIONS = [
     title: 'Строевая',
     desc: 'Чеканить шаг на плацу',
     energy: 40,
-    xp: [15, 22],
+    xp: [34, 42],
     money: [0, 0],
     morale: 1,
     hours: 2,
@@ -402,8 +407,8 @@ const ACTIONS = [
     title: 'Наряд',
     desc: 'Развод на наряд дня',
     energy: 60,
-    xp: [8, 13],
-    money: [45, 80],
+    xp: [30, 36],
+    money: [110, 130],
     morale: -1,
     hours: 3,
     duty: true,
@@ -420,8 +425,8 @@ const ACTIONS = [
     title: 'Помочь прапорщику',
     desc: 'Подмести плац и заслужить плюс',
     energy: 40,
-    xp: [12, 18],
-    money: [35, 75],
+    xp: [24, 29],
+    money: [70, 84],
     morale: 3,
     hours: 2,
     baseMinutes: 30,
@@ -437,8 +442,8 @@ const ACTIONS = [
     title: 'Караул',
     desc: 'Час на посту, всё по уставу',
     energy: 75,
-    xp: [26, 36],
-    money: [90, 140],
+    xp: [44, 52],
+    money: [135, 158],
     morale: -3,
     hours: 4,
     baseMinutes: 60,
@@ -454,9 +459,9 @@ const ACTIONS = [
     title: 'Учить молодых',
     desc: 'Показать, как подшивать воротничок',
     energy: 55,
-    xp: [24, 34],
-    money: [30, 60],
-    morale: 4,
+    xp: [33, 39],
+    money: [97, 112],
+    morale: 5,
     hours: 3,
     flavor: [
       'Молодые слушают. Дед доволен.',
@@ -470,8 +475,8 @@ const ACTIONS = [
     title: 'Большой наряд',
     desc: 'Большое поручение для опытного бойца',
     energy: 95,
-    xp: [70, 100],
-    money: [220, 320],
+    xp: [85, 102],
+    money: [270, 315],
     morale: 10,
     hours: 6,
     cooldownHours: 24,
@@ -482,19 +487,19 @@ const ACTIONS = [
     ]
   },
   // Время задано в реальных минутах до бонусов; часы службы остаются игровыми.
-  { id: 'patrol', icon: '🔦', title: 'Обойти территорию', desc: 'Проверить периметр части', energy: 12, xp: [5, 7], money: [10, 16], morale: 0, hours: 0.5, baseMinutes: 10, flavor: ['Периметр осмотрен, замечаний нет.'] },
-  { id: 'serve', icon: '🥣', title: 'Раздать обед', desc: 'Помочь с раздачей', energy: 15, xp: [6, 9], money: [15, 24], morale: 1, hours: 1, baseMinutes: 15, flavor: ['Обед вовремя получил каждый.'] },
-  { id: 'kitchenClean', icon: '🧽', title: 'Убрать столовую', desc: 'Навести порядок после обеда', energy: 34, xp: [14, 19], money: [34, 48], morale: 0, hours: 2, baseMinutes: 45, flavor: ['Столы чистые, пол блестит.'] },
-  { id: 'deliverFood', icon: '📦', title: 'Доставить продукты', desc: 'Принести припасы на кухню', energy: 25, xp: [10, 14], money: [24, 35], morale: 0, hours: 1.5, baseMinutes: 30, flavor: ['Припасы доставлены на кухню.'] },
-  { id: 'shelf', icon: '🧃', title: 'Разложить товары', desc: 'Пополнить полки чипка', energy: 14, xp: [6, 9], money: [14, 22], morale: 0, hours: 1, baseMinutes: 15, flavor: ['На полках снова порядок.'] },
-  { id: 'stocktake', icon: '📝', title: 'Посчитать товары', desc: 'Помочь с учётом припасов', energy: 22, xp: [9, 13], money: [22, 32], morale: 0, hours: 1.5, baseMinutes: 30, flavor: ['Остатки пересчитаны и записаны.'] },
-  { id: 'unload', icon: '📦', title: 'Разгрузить поставку', desc: 'Принять коробки с товарами', energy: 34, xp: [14, 19], money: [35, 50], morale: 0, hours: 2, baseMinutes: 45, flavor: ['Поставка принята без потерь.'] },
-  { id: 'medSort', icon: '💊', title: 'Разобрать аптечку', desc: 'Проверить медицинские запасы', energy: 10, xp: [4, 7], money: [9, 15], morale: 0, hours: 0.5, baseMinutes: 10, flavor: ['В аптечке всё на своих местах.'] },
-  { id: 'medClean', icon: '🧼', title: 'Убрать медпункт', desc: 'Подготовить санчасть к приёму', energy: 30, xp: [14, 19], money: [30, 44], morale: 0, hours: 2, baseMinutes: 45, flavor: ['В медпункте чисто и спокойно.'] },
-  { id: 'medHelp', icon: '🩹', title: 'Помочь санинструктору', desc: 'Подготовить перевязочные материалы', energy: 17, xp: [8, 11], money: [16, 25], morale: 1, hours: 1, baseMinutes: 20, flavor: ['Перевязочные материалы готовы.'] },
-  { id: 'documents', icon: '📄', title: 'Разобрать документы', desc: 'Рассортировать бумаги штаба', energy: 12, xp: [7, 10], money: [12, 20], morale: 0, hours: 1, baseMinutes: 15, flavor: ['Документы разложены по папкам.'] },
-  { id: 'dispatch', icon: '✉️', title: 'Доставить донесение', desc: 'Передать документы по части', energy: 20, xp: [10, 14], money: [22, 32], morale: 0, hours: 1.5, baseMinutes: 30, flavor: ['Донесение доставлено адресату.'] },
-  { id: 'archive', icon: '🗃️', title: 'Навести порядок в архиве', desc: 'Сверить и убрать папки', energy: 30, xp: [15, 20], money: [32, 45], morale: 0, hours: 2, baseMinutes: 45, flavor: ['Архив приведён в порядок.'] }
+  { id: 'patrol', icon: '🔦', title: 'Обойти территорию', desc: 'Проверить периметр части', energy: 12, xp: [7, 9], money: [20, 25], morale: 0, hours: 0.5, baseMinutes: 10, flavor: ['Периметр осмотрен, замечаний нет.'] },
+  { id: 'serve', icon: '🥣', title: 'Раздать обед', desc: 'Помочь с раздачей', energy: 15, xp: [9, 11], money: [25, 31], morale: 1, hours: 1, baseMinutes: 15, flavor: ['Обед вовремя получил каждый.'] },
+  { id: 'kitchenClean', icon: '🧽', title: 'Убрать столовую', desc: 'Навести порядок после обеда', energy: 34, xp: [20, 24], money: [57, 67], morale: 0, hours: 2, baseMinutes: 45, flavor: ['Столы чистые, пол блестит.'] },
+  { id: 'deliverFood', icon: '📦', title: 'Доставить продукты', desc: 'Принести припасы на кухню', energy: 25, xp: [15, 18], money: [42, 50], morale: 0, hours: 1.5, baseMinutes: 30, flavor: ['Припасы доставлены на кухню.'] },
+  { id: 'shelf', icon: '🧃', title: 'Разложить товары', desc: 'Пополнить полки чипка', energy: 14, xp: [8, 10], money: [24, 30], morale: 0, hours: 1, baseMinutes: 15, flavor: ['На полках снова порядок.'] },
+  { id: 'stocktake', icon: '📝', title: 'Посчитать товары', desc: 'Помочь с учётом припасов', energy: 22, xp: [13, 16], money: [37, 44], morale: 0, hours: 1.5, baseMinutes: 30, flavor: ['Остатки пересчитаны и записаны.'] },
+  { id: 'unload', icon: '📦', title: 'Разгрузить поставку', desc: 'Принять коробки с товарами', energy: 34, xp: [20, 24], money: [57, 67], morale: 0, hours: 2, baseMinutes: 45, flavor: ['Поставка принята без потерь.'] },
+  { id: 'medSort', icon: '💊', title: 'Разобрать аптечку', desc: 'Проверить медицинские запасы', energy: 10, xp: [6, 8], money: [17, 21], morale: 0, hours: 0.5, baseMinutes: 10, flavor: ['В аптечке всё на своих местах.'] },
+  { id: 'medClean', icon: '🧼', title: 'Убрать медпункт', desc: 'Подготовить санчасть к приёму', energy: 30, xp: [18, 22], money: [50, 60], morale: 0, hours: 2, baseMinutes: 45, flavor: ['В медпункте чисто и спокойно.'] },
+  { id: 'medHelp', icon: '🩹', title: 'Помочь санинструктору', desc: 'Подготовить перевязочные материалы', energy: 17, xp: [10, 12], money: [29, 35], morale: 1, hours: 1, baseMinutes: 20, flavor: ['Перевязочные материалы готовы.'] },
+  { id: 'documents', icon: '📄', title: 'Разобрать документы', desc: 'Рассортировать бумаги штаба', energy: 12, xp: [7, 9], money: [20, 25], morale: 0, hours: 1, baseMinutes: 15, flavor: ['Документы разложены по папкам.'] },
+  { id: 'dispatch', icon: '✉️', title: 'Доставить донесение', desc: 'Передать документы по части', energy: 20, xp: [12, 15], money: [35, 42], morale: 0, hours: 1.5, baseMinutes: 30, flavor: ['Донесение доставлено адресату.'] },
+  { id: 'archive', icon: '🗃️', title: 'Навести порядок в архиве', desc: 'Сверить и убрать папки', energy: 30, xp: [18, 22], money: [50, 60], morale: 0, hours: 2, baseMinutes: 45, flavor: ['Архив приведён в порядок.'] }
 ];
 
 // Свободные минуты: доступны всегда, идут параллельно основному занятию
@@ -507,7 +512,7 @@ const SIDE_ACTIONS = [
     desc: 'Подтянуть знания перед проверкой',
     energy: 6,
     xp: [14, 20],
-    durationMinutes: 1,
+    durationSeconds: 10,
     flavor: ['Устав прочитан до середины. Уже что-то.', 'Пара страниц — и на душе по-уставному спокойно.']
   },
   {
@@ -518,7 +523,7 @@ const SIDE_ACTIONS = [
     energy: 8,
     xp: [3, 5],
     money: [24, 36],
-    durationMinutes: 1,
+    durationSeconds: 10,
     flavor: ['Прапорщик расплатился без напоминаний. Чудо.', 'Работа мелкая, зато деньги настоящие.']
   },
   {
@@ -529,7 +534,7 @@ const SIDE_ACTIONS = [
     energy: 3,
     xp: [3, 5],
     morale: 8,
-    durationMinutes: 1,
+    durationSeconds: 10,
     flavor: ['Рота подпевала — даже старшина.', 'Гитара нашлась, струны тоже. Настроение вверх.']
   }
 ];
@@ -543,6 +548,10 @@ function actionFor(id) {
   if (!base) return null;
   if (id === 'duty') return { ...base, ...DUTIES[dutyType()] };
   return base;
+}
+
+function sideDurationMs(side) {
+  return (side.durationSeconds || 0) * 1000;
 }
 
 /* Скорость занятий: базовое ускорение + апгрейды из чипка. */
@@ -3070,7 +3079,7 @@ function actionCardHtml(action, dutyKey = null) {
 function sideCardHtml(side) {
   const chips = [
     `<span class="chip-cost">⚡ ${side.energy}</span>`,
-    `<span class="chip-hours">⏱ ${fmtDuration(side.durationMinutes * 60000)}</span>`,
+    `<span class="chip-hours">⏱ ${fmtSideDuration(sideDurationMs(side))}</span>`,
     `<span>+${side.xp[0]}–${side.xp[1]} XP</span>`
   ];
   const reward = side.money
@@ -3120,7 +3129,7 @@ function updateSideActionStates() {
       const status = $('.action-status', root);
       const line = $('.cd-line', root);
       if (running) {
-        const total = side.durationMinutes * 60000;
+        const total = sideDurationMs(side);
         const remain = Math.max(0, sideActive.until - now);
         status.textContent = `⏱ ${fmtClock(remain)}`;
         line.style.width = `${clamp((1 - remain / total) * 100, 0, 100)}%`;
@@ -3323,7 +3332,7 @@ function doSideAction(id) {
   if (side.energy && state.energy >= state.maxEnergy) state.lastEnergyAt = now;
   state.energy -= side.energy;
 
-  const durationMs = side.durationMinutes * 60000;
+  const durationMs = sideDurationMs(side);
   state.sideBusy = {
     id,
     title: side.title,
@@ -3343,7 +3352,7 @@ function doSideAction(id) {
   save();
   haptic('success');
   playSound('success');
-  toast(`${side.icon} ${side.title} начато · ${fmtDuration(durationMs)}`, 'info');
+  toast(`${side.icon} ${side.title} начато · ${fmtSideDuration(durationMs)}`, 'info');
 }
 
 function finishSideAction() {
