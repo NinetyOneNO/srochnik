@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Unbounded:wght@600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=218" />
+  <link rel="stylesheet" href="styles.css?v=222" />
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
@@ -141,7 +141,7 @@
         <article class="card daily-card">
           <div class="card-head">
             <h2>Задания дня</h2>
-            <span class="card-note">каждые 12 часов</span>
+            <span class="card-note" id="dailyTimer">До обновления: 12 ч</span>
           </div>
           <ul class="daily-list" id="dailyList"></ul>
         </article>
@@ -304,7 +304,7 @@
           <div class="banner-copy">
             <span class="banner-kicker">канцелярия части</span>
             <h2>Штаб</h2>
-            <p>Рейтинг, достижения и поручения прапорщика.</p>
+          <p>Документы и поручения прапорщика.</p>
           </div>
         </div>
         <div class="action-grid" id="staffGrid"></div>
@@ -318,34 +318,6 @@
           <div class="quest-body" id="questBody"></div>
         </article>
 
-        <article class="card staff-card" id="staffCard">
-          <div class="card-head"><h2>Разделы штаба</h2><span class="card-note">выбери раздел</span></div>
-          <div class="staff-grid">
-            <button class="staff-btn is-selected" id="leaderboardBtn">
-              <span class="staff-icon" aria-hidden="true">🏆</span>
-              <span class="staff-body">
-                <b>Рейтинг</b>
-                <small id="staffPosition">Загрузка рейтинга…</small>
-              </span>
-            </button>
-            <button class="staff-btn" id="achievementsBtn">
-              <span class="staff-icon" aria-hidden="true">🎖️</span>
-              <span class="staff-body">
-                <b>Достижения</b>
-                <small id="staffAch">Открыто 0 из 12</small>
-              </span>
-            </button>
-            <button class="staff-btn staff-wide" id="demobAlbumBtn" hidden>
-              <span class="staff-icon" aria-hidden="true">😎</span>
-              <span class="staff-body">
-                <b>Дембельский альбом</b>
-                <small>365 дней позади</small>
-              </span>
-              <span class="staff-arrow" aria-hidden="true">→</span>
-            </button>
-          </div>
-          <div class="staff-tab-content" id="staffTabContent"></div>
-        </article>
       </section>
 
       <!-- ================= ИНВЕНТАРЬ ================= -->
@@ -359,10 +331,29 @@
         </article>
       </section>
 
+      <section class="panel" data-panel="rating" aria-label="Рейтинг">
+        <div class="panel-head"><h2>Рейтинг</h2></div>
+        <article class="card"><div id="ratingContent"></div></article>
+      </section>
+
+      <section class="panel" data-panel="more" aria-label="Прочее">
+        <div class="panel-head"><h2>Прочее</h2></div>
+        <div class="card more-menu">
+          <button class="more-link" type="button" data-more="achievements"><span>🎖️</span><b>Достижения</b><span aria-hidden="true">→</span></button>
+          <button class="more-link" type="button" data-more="log"><span>📜</span><b>События</b><span aria-hidden="true">→</span></button>
+          <button class="more-link" type="button" data-more="settings"><span>⚙️</span><b>Настройки</b><span aria-hidden="true">→</span></button>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="achievements" aria-label="Достижения">
+        <div class="panel-top"><button class="panel-back" data-back-more>← Прочее</button></div>
+        <article class="card"><div id="achievementsContent"></div></article>
+      </section>
+
       <!-- ================= СОБЫТИЯ ================= -->
       <section class="panel log-panel" data-panel="log" aria-label="События">
         <div class="panel-top">
-          <button class="panel-back" data-back>← Гарнизон</button>
+          <button class="panel-back" data-back-more>← Прочее</button>
           <span class="live-chip"><i></i> live</span>
         </div>
         <article class="card log-card">
@@ -377,7 +368,7 @@
       <!-- ================= НАСТРОЙКИ ================= -->
       <section class="panel settings-panel" data-panel="settings" aria-label="Настройки">
         <div class="panel-top">
-          <button class="panel-back" data-back>← Гарнизон</button>
+          <button class="panel-back" data-back-more>← Прочее</button>
           <span class="live-chip">⚙️ профиль</span>
         </div>
         <div class="panel-head">
@@ -436,7 +427,7 @@
         </div>
       </section>
       <section class="panel admin-panel" data-panel="admin" aria-label="Панель администратора">
-        <div class="panel-top"><button class="panel-back" data-back>← Гарнизон</button><span class="live-chip">🛡️ Администратор</span></div>
+        <div class="panel-top"><button class="panel-back" data-back-settings>← Настройки</button><span class="live-chip">🛡️ Администратор</span></div>
         <div class="panel-head"><h2>Панель администратора</h2></div>
         <div class="card admin-panel-card" id="adminPanelContent"></div>
       </section>
@@ -456,8 +447,8 @@
     <button class="nav-btn is-active" data-tab="map"><span class="nav-icon">🗺️</span><span>Гарнизон</span></button>
     <button class="nav-btn" data-tab="inventory"><span class="nav-icon">🎒</span><span>Инвентарь</span></button>
     <button class="nav-btn" data-tab="hero"><span class="nav-icon">👤</span><span>Боец</span></button>
-    <button class="nav-btn" data-tab="log"><span class="nav-icon">📜</span><span>События</span></button>
-    <button class="nav-btn" data-tab="settings"><span class="nav-icon">⚙️</span><span>Настройки</span></button>
+    <button class="nav-btn" data-tab="rating"><span class="nav-icon">🏆</span><span>Рейтинг</span></button>
+    <button class="nav-btn" data-tab="more"><span class="nav-icon">☰</span><span>Прочее</span></button>
   </nav>
 
   <div class="tutorial" id="tutorial" aria-hidden="true">
@@ -499,6 +490,6 @@
 
   <input type="file" id="avatarInput" class="avatar-input" accept="image/*" />
 
-  <script src="app.js?v=218"></script>
+  <script src="app.js?v=222"></script>
 </body>
 </html>

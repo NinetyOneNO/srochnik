@@ -807,6 +807,33 @@ button:focus-visible {
   transition: transform .15s ease, border-color .2s ease, box-shadow .2s ease, opacity .2s ease;
 }
 
+.action-card { flex-wrap: wrap; align-items: flex-start; }
+.action-card .action-side { margin-left: auto; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.action-time { color: var(--text); }
+.action-energy { color: #e8b957; }
+.action-bottom-reward { flex-basis: 100%; padding-left: 55px; color: var(--lime); font-size: 10px; font-weight: 800; }
+.action-achievements-title { margin: 20px 0 5px; }
+.action-rank.rank-F { border-color: #aeb6c2 !important; }
+.action-rank.rank-E { border-color: #5298ec !important; }
+.action-rank.rank-D { border-color: #50bf79 !important; }
+.action-rank.rank-C { border-color: #e0c450 !important; }
+.action-rank.rank-B { border-color: #ec973c !important; }
+.action-rank.rank-A { border-color: #e55d65 !important; }
+.action-rank.rank-S { border-color: #60d4df !important; box-shadow: inset 0 0 0 1px #60d4df; }
+.mastery-badge { display: inline-grid; place-items: center; min-width: 21px; height: 21px; margin-right: 6px; padding: 0 4px; border: 1px solid currentColor; border-radius: 6px; background: rgba(0, 0, 0, .22); font-size: 10px; font-weight: 900; vertical-align: middle; }
+.mastery-badge.rank-F { color: #aeb6c2; }
+.mastery-badge.rank-E { color: #5298ec; }
+.mastery-badge.rank-D { color: #50bf79; }
+.mastery-badge.rank-C { color: #c7a52a; }
+.mastery-badge.rank-B { color: #ec973c; }
+.mastery-badge.rank-A { color: #e55d65; }
+.mastery-badge.rank-S { color: #36b3c1; }
+.more-menu { padding: 4px 14px; }
+.more-link { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px 2px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.more-link:last-child { border-bottom: 0; }
+.more-link b { flex: 1; }
+.more-link span:last-child { color: var(--muted); }
+
 .action-card:hover {
   border-color: var(--line-strong);
   transform: translateY(-2px);

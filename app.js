@@ -510,7 +510,7 @@ const SIDE_ACTIONS = [
     icon: '📖',
     title: 'Полистать устав',
     desc: 'Подтянуть знания перед проверкой',
-    energy: 6,
+    energy: 12,
     xp: [14, 20],
     durationSeconds: 10,
     flavor: ['Устав прочитан до середины. Уже что-то.', 'Пара страниц — и на душе по-уставному спокойно.']
@@ -520,7 +520,7 @@ const SIDE_ACTIONS = [
     icon: '🧰',
     title: 'Подработать у прапорщика',
     desc: 'Мелкая работа за наличные',
-    energy: 8,
+    energy: 12,
     xp: [3, 5],
     money: [24, 36],
     durationSeconds: 10,
@@ -531,7 +531,7 @@ const SIDE_ACTIONS = [
     icon: '🎸',
     title: 'Спеть под гитару',
     desc: 'Поднять настроение роте',
-    energy: 3,
+    energy: 5,
     xp: [3, 5],
     morale: 8,
     durationSeconds: 10,
@@ -1178,10 +1178,10 @@ const ACHIEVEMENTS = [
     id: 'collector',
     icon: '🎒',
     title: 'Запасливый',
-    desc: 'Держать в инвентаре 5 разных предметов',
+    desc: 'Собрать 5 разных предметов и улучшений',
     reward: { money: 100 },
-    progress: () => [Math.min(Object.values(state.inventory || {}).filter((n) => Number(n) > 0).length, 5), 5],
-    check: () => Object.values(state.inventory || {}).filter((n) => Number(n) > 0).length >= 5
+    progress: () => [Math.min(ownedItemCount(), 5), 5],
+    check: () => ownedItemCount() >= 5
   },
   {
     id: 'actions50',
@@ -1193,6 +1193,23 @@ const ACHIEVEMENTS = [
     check: () => (state.stats.actionsTotal || 0) >= 50
   }
 ];
+
+function ownedItemCount() {
+  return SHOP.filter((item) => Number(item.permanent ? state.purchases?.[item.id] : state.inventory?.[item.id]) > 0).length;
+}
+
+const ACTION_MILESTONES = [1, 3, 5, 10, 25, 50, 100];
+const ACTION_RANKS = ['F', 'E', 'D', 'C', 'B', 'A', 'S'];
+const TRACKED_ACTIONS = [...ACTIONS.filter((action) => action.id !== 'duty'), ...SIDE_ACTIONS,
+  ...Object.entries(DUTIES).map(([key, duty]) => ({ ...duty, id: `duty:${key}` }))];
+
+function actionRank(id) {
+  const count = Number(state.stats.byAction?.[id]) || 0;
+  for (let i = ACTION_MILESTONES.length - 1; i >= 0; i--) {
+    if (count >= ACTION_MILESTONES[i]) return ACTION_RANKS[i];
+  }
+  return '';
+}
 
 
 /* ---------- state ---------- */
@@ -1304,6 +1321,7 @@ function loadState(rawOverride) {
         until: Number(savedBusy.until) || 0,
         startedAt: Number(savedBusy.startedAt) || 0,
         totalMs: Number(savedBusy.totalMs) || 0,
+        dutyType: DUTIES[savedBusy.dutyType] ? savedBusy.dutyType : null,
         reward: savedBusy.reward || null,
         rewardVersion: savedBusy.rewardVersion || 0
       },
@@ -1600,6 +1618,7 @@ async function initializeCloud() {
     updateAdminTab();
     setCloudMeta({ user, revision: cloudRevision, dirty: cloudPending });
     cloudStatus('Аккаунт Telegram подключён');
+    if (Number(result.weekly_reward) > 0) toast(`🏆 Награда рейтинга: +${fmt(result.weekly_reward)} ₽`, 'good');
   } catch {
     if (sessionExpired || accountBanned) return;
     cloudInitFailed = true;
@@ -1916,6 +1935,7 @@ function rewardParts(reward) {
 }
 
 function renderDaily() {
+  updateDailyTimer();
   els.dailyList.innerHTML = DAILY_TASKS.map((task) => {
     const done = Boolean(state.daily.done[task.id]);
     const raw = state.daily.progress[task.key] || 0;
@@ -1936,6 +1956,14 @@ function renderDaily() {
       </li>
     `;
   }).join('');
+}
+
+function updateDailyTimer() {
+  const timer = $('#dailyTimer');
+  if (!timer) return;
+  const elapsed = Math.max(0, Date.now() - state.startedAt);
+  const hours = Math.ceil((DAY_MS - elapsed % DAY_MS) / HOUR_MS);
+  timer.textContent = `До обновления: ${hours} ч`;
 }
 
 function applyReward(reward) {
@@ -2377,6 +2405,7 @@ function visit() {
   state.visitedToday = true;
   state.morale = clamp(state.morale + 12, 0, 100);
   pushLog({ icon: '🚶', text: 'Посещения: встретился с близкими.', gains: ['+12 🔥'], type: 'good' });
+  checkAchievements();
   renderAll(); save(); toast('🚶 Боевой дух поднят', 'good');
 }
 
@@ -2775,23 +2804,19 @@ function myLeaderboardPlace() {
 }
 
 function renderStaff() {
-  if (!els.staffPosition) return;
-
   if (cloudReady && !cloudLeaderboard && !leaderboardLoading && !leaderboardError) {
     refreshLeaderboard();
   }
+  if ($('[data-panel="rating"]')?.classList.contains('is-active')) renderStandalone('rating');
+  if ($('[data-panel="achievements"]')?.classList.contains('is-active')) renderStandalone('achievements');
+}
 
-  const placeInfo = myLeaderboardPlace();
-  const unlocked = ACHIEVEMENTS.filter((a) => state.achievements[a.id]).length;
-
-  els.staffPosition.textContent = !cloudLeaderboard && tg?.initData
-    ? (leaderboardError ? 'Рейтинг недоступен' : 'Загрузка рейтинга…')
-    : placeInfo.place ? `Ты на ${placeInfo.place} месте из ${placeInfo.total}` : 'Ты пока вне рейтинга';
-  els.staffAch.textContent = `Открыто ${unlocked} из ${ACHIEVEMENTS.length}`;
-  els.leaderboardBtn.disabled = false;
-
-  els.demobAlbumBtn.hidden = true;
-  renderStaffTab();
+function renderStandalone(tab) {
+  const content = $(tab === 'rating' ? '#ratingContent' : '#achievementsContent');
+  if (!content) return;
+  if (tab === 'rating') renderLeaderboard(content);
+  else renderAchievements(content);
+  content.querySelectorAll('[data-close], .sheet-handle').forEach((element) => element.remove());
 }
 
 let staffTab = 'leaderboard';
@@ -2922,6 +2947,7 @@ function renderLeaderboard(el) {
         <button class="icon-btn" data-close aria-label="Закрыть">✕</button>
       </div>
     </div>
+    <p class="lb-note">Еженедельные награды: 🥇 100 ₽ · 🥈 70 ₽ · 🥉 50 ₽. Участвуют игроки с актуальной серией входов от 7 дней. Итоги — в понедельник в 00:00 UTC; награда зачисляется при следующем входе.</p>
     <ul class="lb-list">${rows || '<li class="lb-empty">Пока в рейтинге никого нет</li>'}</ul>
     <p class="lb-note">${note}</p>
     <button class="btn btn-ghost" data-close>Закрыть</button>
@@ -2945,6 +2971,16 @@ function renderLeaderboard(el) {
 
 function renderAchievements(el) {
   const count = ACHIEVEMENTS.filter((a) => state.achievements[a.id]).length;
+
+  const actionItems = TRACKED_ACTIONS.map((action) => {
+    const completed = Number(state.stats.byAction?.[action.id]) || 0;
+    const rank = actionRank(action.id);
+    const next = ACTION_MILESTONES.find((goal) => completed < goal);
+    return `<div class="ach-item action-rank ${rank ? `rank-${rank}` : 'is-locked'}">
+      <span class="ach-icon" aria-hidden="true">${action.icon}</span>
+      <div class="ach-info"><span class="ach-name">${rank ? `<span class="mastery-badge rank-${rank}" aria-label="Ранг ${rank}">${rank}</span>` : ''}${escapeHtml(action.title)}</span>
+      <span class="ach-desc">${next ? `Выполнено: ${fmt(completed)} / ${next}` : `Выполнено: ${fmt(completed)} · максимальный уровень`}</span></div></div>`;
+  }).join('');
 
   const items = ACHIEVEMENTS.map((achievement) => {
     const unlocked = Boolean(state.achievements[achievement.id]);
@@ -2980,6 +3016,9 @@ function renderAchievements(el) {
     <div class="ach-progress"><span>Открыто</span><b>${count} / ${ACHIEVEMENTS.length}</b></div>
     <div class="bar tiny" style="margin-top:6px"><i class="fill xp" style="width:${(count / ACHIEVEMENTS.length) * 100}%"></i></div>
     <div class="ach-grid">${items}</div>
+    <h3 class="action-achievements-title">Мастерство занятий</h3>
+    <p class="sheet-sub">Выполняй занятия, чтобы повышать их ранг.</p>
+    <div class="ach-grid">${actionItems}</div>
     <button class="btn btn-ghost" data-close>Закрыть</button>
   `;
 }
@@ -3053,14 +3092,13 @@ function actionRewardLabel(action) {
 
 function actionCardHtml(action, dutyKey = null) {
   const chips = [
-    `<span class="chip-cost">⚡ ${action.energy}</span>`,
     ...(ACTION_HEALTH_COST[action.id] ? [`<span class="chip-health">❤️ −${ACTION_HEALTH_COST[action.id]}</span>`] : []),
-    `<span class="chip-hours">🕒 ${fmtDuration(activityDurationMs(action))}</span>`,
     `<span>+${action.xp[0]}–${action.xp[1]} XP</span>`
   ];
+  const rank = actionRank(dutyKey ? `duty:${dutyKey}` : action.id);
 
   return `
-    <button class="action-card" data-action="${action.id}"${dutyKey ? ` data-duty-type="${dutyKey}"` : ''} aria-label="${action.title}">
+    <button class="action-card ${rank ? `action-rank rank-${rank}` : ''}" data-action="${action.id}"${dutyKey ? ` data-duty-type="${dutyKey}"` : ''} aria-label="${action.title}">
       <span class="action-icon" aria-hidden="true">${action.icon}</span>
       <span class="action-main">
         <span class="action-title">${action.title}</span>
@@ -3068,9 +3106,11 @@ function actionCardHtml(action, dutyKey = null) {
         <span class="action-chips">${chips.join('')}</span>
       </span>
       <span class="action-side">
-        <span class="action-reward">${actionRewardLabel(action)}</span>
+        <span class="action-time">🕒 ${fmtDuration(activityDurationMs(action))}</span>
+        <span class="action-energy">⚡ ${action.energy}</span>
         <span class="action-status">готово</span>
       </span>
+      <span class="action-bottom-reward">${actionRewardLabel(action)}${action.money?.[1] && action.morale ? ` · ${action.morale > 0 ? '+' : ''}${action.morale} 🔥` : ''}${rank ? ` · ${rank}` : ''}</span>
       <span class="cd-line" aria-hidden="true"></span>
     </button>
   `;
@@ -3078,17 +3118,16 @@ function actionCardHtml(action, dutyKey = null) {
 
 function sideCardHtml(side) {
   const chips = [
-    `<span class="chip-cost">⚡ ${side.energy}</span>`,
-    `<span class="chip-hours">⏱ ${fmtSideDuration(sideDurationMs(side))}</span>`,
     `<span>+${side.xp[0]}–${side.xp[1]} XP</span>`
   ];
+  const rank = actionRank(side.id);
   const reward = side.money
     ? `+${side.money[0]}–${side.money[1]} ₽`
     : side.morale ? `+${side.morale} 🔥`
       : side.hp ? `+${side.hp} ❤️` : 'опыт';
 
   return `
-    <button class="action-card side-card" data-side-action="${side.id}" aria-label="${side.title}">
+    <button class="action-card side-card ${rank ? `action-rank rank-${rank}` : ''}" data-side-action="${side.id}" aria-label="${side.title}">
       <span class="action-icon" aria-hidden="true">${side.icon}</span>
       <span class="action-main">
         <span class="action-title">${side.title}</span>
@@ -3096,9 +3135,11 @@ function sideCardHtml(side) {
         <span class="action-chips">${chips.join('')}</span>
       </span>
       <span class="action-side">
-        <span class="action-reward">${reward}</span>
+        <span class="action-time">⏱ ${fmtSideDuration(sideDurationMs(side))}</span>
+        <span class="action-energy">⚡ ${side.energy}</span>
         <span class="action-status">готово</span>
       </span>
+      <span class="action-bottom-reward">${reward}${rank ? ` · ${rank}` : ''}</span>
       <span class="cd-line" aria-hidden="true"></span>
     </button>
   `;
@@ -3315,6 +3356,8 @@ function doSideAction(id) {
   const side = SIDE_ACTIONS.find((entry) => entry.id === id);
   if (!side) return;
 
+  if (state.sideBusy?.id && state.sideBusy.until <= Date.now()) finishSideAction();
+
   const activeSide = sideBusyAction();
   if (activeSide) {
     toast(`⏳ Сначала закончите: ${activeSide.title.toLowerCase()}`, 'info');
@@ -3358,6 +3401,7 @@ function doSideAction(id) {
 function finishSideAction() {
   const entry = state.sideBusy;
   if (!entry?.id) return;
+  if (entry.until > Date.now()) return;
 
   const side = SIDE_ACTIONS.find((item) => item.id === entry.id);
   const reward = entry.reward || null;
@@ -3396,6 +3440,7 @@ function finishSideAction() {
   state.stats.byAction[entry.id] = (state.stats.byAction[entry.id] || 0) + 1;
 
   addXp(xpGain);
+  renderActions();
   checkAchievements();
   pushLog({
     icon,
@@ -3470,6 +3515,7 @@ function doAction(id) {
     icon: action.icon,
     startedAt: now,
     totalMs: durationMs,
+    dutyType: action.duty ? dutyType() : null,
     until: now + durationMs,
     rewardVersion: 1,
     reward: { xpGain, moneyGain, moraleGain, hours: action.hours, flavor: pick(action.flavor), icon: action.icon, title: action.title, duty: Boolean(action.duty) }
@@ -4137,11 +4183,13 @@ function setTab(tab) {
     renderStaffTab();
   }
   if (tab === 'admin') renderAdminPanel();
+  if (tab === 'rating' || tab === 'achievements') renderStandalone(tab);
   $$('.panel').forEach((panel) => {
     panel.classList.toggle('is-active', panel.dataset.panel === tab);
   });
   $$('.nav-btn').forEach((btn) => {
-    const active = btn.dataset.tab === tab || (btn.dataset.tab === 'map' && MAP_TABS.has(tab));
+    const active = btn.dataset.tab === tab || (btn.dataset.tab === 'map' && MAP_TABS.has(tab)) ||
+      (btn.dataset.tab === 'more' && ['achievements', 'log', 'settings', 'admin'].includes(tab));
     btn.classList.toggle('is-active', active);
   });
   if (tab === 'inventory') renderInventory();
@@ -4205,6 +4253,11 @@ function tick() {
     state.stats.hours = (state.stats.hours || 0) + (Number(reward.hours) || 0);
     state.stats.byAction = state.stats.byAction || {};
     state.stats.byAction[state.busy.id] = (state.stats.byAction[state.busy.id] || 0) + 1;
+    if (reward.duty && DUTIES[state.busy.dutyType]) {
+      const dutyKey = `duty:${state.busy.dutyType}`;
+      state.stats.byAction[dutyKey] = (state.stats.byAction[dutyKey] || 0) + 1;
+    }
+    renderActions();
     addXp(xpGain);
     dailyAdd('hours', Number(reward.hours) || 0);
     dailyAdd('earn', moneyGain);
@@ -4269,6 +4322,7 @@ function tick() {
   if ($('[data-panel="actions"]')?.classList.contains('is-active')) renderCurrentDuty();
   updateCareLive();
   checkDailyReset();
+  updateDailyTimer();
   // Карта не меняется каждую секунду: не заставляем мобильный браузер
   // заново пересчитывать её стеклянные узлы без изменения состояния.
   const mapBusyKey = state.busy?.id ? `${state.busy.id}:${state.busy.until}` : '';
@@ -4430,6 +4484,9 @@ function bindEvents() {
       setTab('map');
     });
   });
+  $$('[data-back-more]').forEach((btn) => btn.addEventListener('click', () => setTab('more')));
+  $$('[data-back-settings]').forEach((btn) => btn.addEventListener('click', () => setTab('settings')));
+  $$('[data-more]').forEach((btn) => btn.addEventListener('click', () => setTab(btn.dataset.more)));
 
   const mapTutorialBtn = $('#mapTutorialBtn');
   if (mapTutorialBtn) mapTutorialBtn.addEventListener('click', () => showTutorial(true));
