@@ -266,12 +266,12 @@ function closeTutorial() {
 
 const RANKS = [
   { xp: 0, title: 'F', emoji: '⚪' },
-  { xp: 300, title: 'E', emoji: '🔵' },
+  { xp: 300, title: 'E', emoji: '⚪' },
   { xp: 900, title: 'D', emoji: '🟢' },
-  { xp: 1800, title: 'C', emoji: '🟡' },
-  { xp: 3000, title: 'B', emoji: '🟠' },
-  { xp: 4500, title: 'A', emoji: '🔴' },
-  { xp: 6500, title: 'S', emoji: '💎' }
+  { xp: 1800, title: 'C', emoji: '🟢' },
+  { xp: 3000, title: 'B', emoji: '🔵' },
+  { xp: 4500, title: 'A', emoji: '🟣' },
+  { xp: 6500, title: 'S', emoji: '🟡' }
 ];
 
 // Бонусы накопительные: процент сокращает время начальных занятий.
@@ -2920,7 +2920,7 @@ function renderLeaderboard(el) {
         <span class="lb-avatar"${entry.avatar ? '' : ' aria-hidden="true"'}>${entry.avatar ? `<img src="${entry.avatar}" alt="" loading="lazy" draggable="false" />` : entry.emoji}</span>
         <span class="lb-info">
           <b>${escapeHtml(entry.name)}${entry.isPlayer ? ' · это ты' : ''}</b>
-          <span>${details}</span>
+          <span class="rank-text" data-rank="${details}">${details}</span>
         </span>
         <span class="lb-xp">${fmt(entry.xp)} XP</span>
       </li>
@@ -3523,7 +3523,7 @@ function doAction(id) {
   haptic('success');
   playSound('success');
 
-  toast(`${action.icon} ${action.title} начато · награда после выполнения`, 'info');
+  toast(`${action.icon} ${action.title} начато`, 'info');
 }
 
 /* ---------- modals ---------- */
@@ -3567,7 +3567,7 @@ function renderLevelSheet(el, rank, gained) {
   el.innerHTML = `
     <div class="sheet-emoji">${rank.emoji}</div>
     <h3 class="sheet-title">Новый уровень!</h3>
-    <p class="sheet-text">Теперь твой уровень — <b>${rank.title}</b>.</p>
+    <p class="sheet-text">Теперь твой уровень — <b class="rank-text" data-rank="${rank.title}">${rank.title}</b>.</p>
     <div class="sheet-rewards">
       <span class="reward-pill">+${gained * 10} ⚡ к максимуму</span>
       <span class="reward-pill">+${gained * 5} ❤️ к максимуму</span>

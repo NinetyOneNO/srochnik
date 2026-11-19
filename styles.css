@@ -814,20 +814,20 @@ button:focus-visible {
 .action-bottom-reward { flex-basis: 100%; padding-left: 55px; color: var(--lime); font-size: 10px; font-weight: 800; }
 .action-achievements-title { margin: 20px 0 5px; }
 .action-rank.rank-F { border-color: #aeb6c2 !important; }
-.action-rank.rank-E { border-color: #5298ec !important; }
+.action-rank.rank-E { border-color: #aeb6c2 !important; }
 .action-rank.rank-D { border-color: #50bf79 !important; }
-.action-rank.rank-C { border-color: #e0c450 !important; }
-.action-rank.rank-B { border-color: #ec973c !important; }
-.action-rank.rank-A { border-color: #e55d65 !important; }
-.action-rank.rank-S { border-color: #60d4df !important; box-shadow: inset 0 0 0 1px #60d4df; }
+.action-rank.rank-C { border-color: #50bf79 !important; }
+.action-rank.rank-B { border-color: #5298ec !important; }
+.action-rank.rank-A { border-color: #a76cdd !important; }
+.action-rank.rank-S { border-color: #d6a837 !important; box-shadow: inset 0 0 0 1px #d6a837; }
 .mastery-badge { display: inline-grid; place-items: center; min-width: 21px; height: 21px; margin-right: 6px; padding: 0 4px; border: 1px solid currentColor; border-radius: 6px; background: rgba(0, 0, 0, .22); font-size: 10px; font-weight: 900; vertical-align: middle; }
 .mastery-badge.rank-F { color: #aeb6c2; }
-.mastery-badge.rank-E { color: #5298ec; }
+.mastery-badge.rank-E { color: #aeb6c2; }
 .mastery-badge.rank-D { color: #50bf79; }
-.mastery-badge.rank-C { color: #c7a52a; }
-.mastery-badge.rank-B { color: #ec973c; }
-.mastery-badge.rank-A { color: #e55d65; }
-.mastery-badge.rank-S { color: #36b3c1; }
+.mastery-badge.rank-C { color: #50bf79; }
+.mastery-badge.rank-B { color: #5298ec; }
+.mastery-badge.rank-A { color: #a76cdd; }
+.mastery-badge.rank-S { color: #d6a837; }
 .more-menu { padding: 4px 14px; }
 .more-link { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px 2px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
 .more-link:last-child { border-bottom: 0; }
@@ -4061,6 +4061,16 @@ body {
 .level-row[data-rank="B"] b { color: #78b7ff; }
 .level-row[data-rank="A"] b { color: #cba2ff; }
 .level-row[data-rank="S"] b { color: #ffd66f; }
+.rank-text[data-rank="F"], .rank-text[data-rank="E"] { color: #b9c1cc; }
+.rank-text[data-rank="D"], .rank-text[data-rank="C"] { color: #7ee0a4; }
+.rank-text[data-rank="B"] { color: #78b7ff; }
+.rank-text[data-rank="A"] { color: #cba2ff; }
+.rank-text[data-rank="S"] { color: #ffd66f; }
+:root[data-theme="light"] .rank-text[data-rank="F"], :root[data-theme="light"] .rank-text[data-rank="E"] { color: #596473; }
+:root[data-theme="light"] .rank-text[data-rank="D"], :root[data-theme="light"] .rank-text[data-rank="C"] { color: #167447; }
+:root[data-theme="light"] .rank-text[data-rank="B"] { color: #205ca8; }
+:root[data-theme="light"] .rank-text[data-rank="A"] { color: #753ab3; }
+:root[data-theme="light"] .rank-text[data-rank="S"] { color: #875800; }
 #topLevel { display: inline-block; padding: 1px 6px; border-radius: 6px; }
 .hero-buffs { margin-top: 12px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 12px; background: rgba(110,168,255,.08); color: #c8d9f7; font-size: 11px; }
 .hero-buffs-title { margin-bottom: 7px; font-weight: 800; color: var(--text); }
