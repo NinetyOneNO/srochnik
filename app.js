@@ -3084,16 +3084,19 @@ function hideDemob() {
 
 /* ---------- actions render ---------- */
 
-function actionRewardLabel(action) {
-  if (action.money && action.money[1] > 0) return `+${action.money[0]}–${action.money[1]} ₽`;
-  if (action.morale) return `${action.morale > 0 ? '+' : ''}${action.morale} 🔥`;
-  return 'опыт';
+function actionRewardChips(action) {
+  return [
+    ...(action.money?.[1] > 0 ? [`<span class="chip-money">+${action.money[0]}–${action.money[1]} ₽</span>`] : []),
+    ...(action.morale ? [`<span>${action.morale > 0 ? '+' : '−'}${Math.abs(action.morale)} 🔥</span>`] : []),
+    ...(action.hp ? [`<span>+${action.hp} ❤️</span>`] : [])
+  ];
 }
 
 function actionCardHtml(action, dutyKey = null) {
   const chips = [
     ...(ACTION_HEALTH_COST[action.id] ? [`<span class="chip-health">❤️ −${ACTION_HEALTH_COST[action.id]}</span>`] : []),
-    `<span>+${action.xp[0]}–${action.xp[1]} XP</span>`
+    `<span>+${action.xp[0]}–${action.xp[1]} XP</span>`,
+    ...actionRewardChips(action)
   ];
   const rank = actionRank(dutyKey ? `duty:${dutyKey}` : action.id);
 
@@ -3108,9 +3111,8 @@ function actionCardHtml(action, dutyKey = null) {
       <span class="action-side">
         <span class="action-time">🕒 ${fmtDuration(activityDurationMs(action))}</span>
         <span class="action-energy">⚡ ${action.energy}</span>
-        <span class="action-status">готово</span>
+        <span class="action-status"></span>
       </span>
-      <span class="action-bottom-reward">${actionRewardLabel(action)}${action.money?.[1] && action.morale ? ` · ${action.morale > 0 ? '+' : ''}${action.morale} 🔥` : ''}${rank ? ` · ${rank}` : ''}</span>
       <span class="cd-line" aria-hidden="true"></span>
     </button>
   `;
@@ -3118,13 +3120,10 @@ function actionCardHtml(action, dutyKey = null) {
 
 function sideCardHtml(side) {
   const chips = [
-    `<span>+${side.xp[0]}–${side.xp[1]} XP</span>`
+    `<span>+${side.xp[0]}–${side.xp[1]} XP</span>`,
+    ...actionRewardChips(side)
   ];
   const rank = actionRank(side.id);
-  const reward = side.money
-    ? `+${side.money[0]}–${side.money[1]} ₽`
-    : side.morale ? `+${side.morale} 🔥`
-      : side.hp ? `+${side.hp} ❤️` : 'опыт';
 
   return `
     <button class="action-card side-card ${rank ? `action-rank rank-${rank}` : ''}" data-side-action="${side.id}" aria-label="${side.title}">
@@ -3137,9 +3136,8 @@ function sideCardHtml(side) {
       <span class="action-side">
         <span class="action-time">⏱ ${fmtSideDuration(sideDurationMs(side))}</span>
         <span class="action-energy">⚡ ${side.energy}</span>
-        <span class="action-status">готово</span>
+        <span class="action-status"></span>
       </span>
-      <span class="action-bottom-reward">${reward}${rank ? ` · ${rank}` : ''}</span>
       <span class="cd-line" aria-hidden="true"></span>
     </button>
   `;
@@ -3178,7 +3176,7 @@ function updateSideActionStates() {
         status.textContent = 'занято';
         line.style.width = '0%';
       } else {
-        status.textContent = lowEnergy ? `нужно ⚡${side.energy}` : 'готово';
+        status.textContent = '';
         line.style.width = '0%';
       }
     });
@@ -3259,7 +3257,7 @@ function updateActionStates() {
         ref.status.textContent = blocker.id === base.id ? 'выполняется' : 'занято';
         ref.line.style.width = '0%';
       } else {
-        ref.status.textContent = lowEnergy ? `нужно ⚡${action.energy}` : 'готово';
+        ref.status.textContent = '';
         ref.line.style.width = '0%';
       }
     });
