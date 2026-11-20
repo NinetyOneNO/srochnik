@@ -790,7 +790,7 @@ const DAILY_TASKS = [
     key: 'hours',
     goal: 5,
     unit: 'ч',
-    reward: { money: 90, xp: 25 }
+    reward: { xp: 25 }
   },
   {
     id: 'earn',
@@ -799,7 +799,7 @@ const DAILY_TASKS = [
     key: 'earn',
     goal: 150,
     unit: '₽',
-    reward: { money: 70, morale: 10 }
+    reward: { xp: 25 }
   },
   {
     id: 'call',
@@ -808,9 +808,33 @@ const DAILY_TASKS = [
     key: 'call',
     goal: 1,
     unit: '',
-    reward: { morale: 15, xp: 15 }
+    reward: { xp: 15 }
   }
 ];
+
+// Набор выбирается один раз на игровой день; три уровня сложности доступны с ранга F.
+const DAILY_TASK_POOL = [
+  { id: 'side2', icon: '⏱️', title: 'Выполнить 2 свободных дела', key: 'side', goal: 2, difficulty: 'Лёгкое', xp: [10, 15] },
+  { id: 'main1', icon: '✅', title: 'Выполнить основное занятие', key: 'main', goal: 1, difficulty: 'Лёгкое', xp: [10, 15] },
+  { id: 'call1', icon: '📞', title: 'Позвонить маме', key: 'call', goal: 1, difficulty: 'Лёгкое', xp: [10, 15] },
+  { id: 'hours3', icon: '🕒', title: 'Отслужить 3 игровых часа', key: 'hours', goal: 3, unit: 'ч', difficulty: 'Среднее', xp: [20, 30] },
+  { id: 'earn100', icon: '💰', title: 'Заработать 100 ₽', key: 'earn', goal: 100, unit: '₽', difficulty: 'Среднее', xp: [20, 30] },
+  { id: 'main3', icon: '📋', title: 'Выполнить 3 основных занятия', key: 'main', goal: 3, difficulty: 'Среднее', xp: [20, 30] },
+  { id: 'hours6', icon: '🕰️', title: 'Отслужить 6 игровых часов', key: 'hours', goal: 6, unit: 'ч', difficulty: 'Сложное', xp: [35, 50] },
+  { id: 'earn250', icon: '💵', title: 'Заработать 250 ₽', key: 'earn', goal: 250, unit: '₽', difficulty: 'Сложное', xp: [35, 50] },
+  { id: 'duty2', icon: '🧹', title: 'Выполнить 2 наряда', key: 'duty', goal: 2, difficulty: 'Сложное', xp: [35, 50] }
+];
+
+function dailyTasksFor(date) {
+  const day = Math.max(0, Number(String(date).replace(/^g/, '')) || 0);
+  return [0, 1, 2].map((tier) => DAILY_TASK_POOL[tier * 3 + (Math.floor(day / (3 ** tier)) % 3)]);
+}
+
+function currentDailyTasks() {
+  return Array.isArray(state.daily.tasks)
+    ? state.daily.tasks.map((id) => DAILY_TASK_POOL.find((task) => task.id === id)).filter(Boolean)
+    : DAILY_TASKS;
+}
 
 const STREAK_MILESTONES = {
   3: { icon: '🔥', reward: { money: 100 } },
@@ -1243,7 +1267,8 @@ function defaultState() {
     quest: { index: 0 },
     daily: {
       date: gameDayKeyFrom(Date.now(), Date.now()),
-      progress: { hours: 0, earn: 0, call: 0 },
+      tasks: dailyTasksFor('g0').map((task) => task.id),
+      progress: { hours: 0, earn: 0, call: 0, side: 0, main: 0, duty: 0 },
       done: {}
     },
     settings: { sound: true, notify: false, theme: 'dark' },
@@ -1298,6 +1323,7 @@ function loadState(rawOverride) {
       daily: {
         ...base.daily,
         ...(saved.daily || {}),
+        tasks: Array.isArray(saved.daily?.tasks) ? saved.daily.tasks : null,
         progress: { ...base.daily.progress, ...(saved.daily?.progress || {}) },
         done: saved.daily?.done || {}
       },
@@ -1936,7 +1962,7 @@ function rewardParts(reward) {
 
 function renderDaily() {
   updateDailyTimer();
-  els.dailyList.innerHTML = DAILY_TASKS.map((task) => {
+  els.dailyList.innerHTML = currentDailyTasks().map((task) => {
     const done = Boolean(state.daily.done[task.id]);
     const raw = state.daily.progress[task.key] || 0;
     const prog = Math.min(raw, task.goal);
@@ -1948,7 +1974,7 @@ function renderDaily() {
         <div class="daily-main">
           <div class="daily-top">
             <span class="daily-title">${task.icon} ${task.title}</span>
-            <span class="daily-reward">${rewardParts(task.reward).join(' · ')}</span>
+            <span class="daily-reward">${task.xp ? `+${task.xp[0]}–${task.xp[1]} XP · ${task.difficulty}` : rewardParts(task.reward).join(' · ')}</span>
           </div>
           <div class="bar tiny"><i style="width:${pct}%"></i></div>
           <div class="daily-progress">${done ? 'выполнено' : `${prog} / ${task.goal}${task.unit ? ' ' + task.unit : ''}`}</div>
@@ -2060,18 +2086,19 @@ function dailyAdd(key, amount) {
 function checkDailyTasks() {
   let completed = false;
 
-  DAILY_TASKS.forEach((task) => {
+  currentDailyTasks().forEach((task) => {
     if (state.daily.done[task.id]) return;
     if ((state.daily.progress[task.key] || 0) < task.goal) return;
 
     state.daily.done[task.id] = true;
-    applyReward(task.reward);
+    const reward = task.xp ? { xp: rand(task.xp[0], task.xp[1]) } : task.reward;
+    applyReward(reward);
     completed = true;
 
     pushLog({
       icon: '✅',
       text: `Задание дня: ${task.title}`,
-      gains: rewardParts(task.reward),
+      gains: rewardParts(reward),
       type: 'level'
     });
     toast(`✅ Задание дня выполнено: ${task.title}`, 'good');
@@ -2135,7 +2162,8 @@ function checkDailyReset(notify = true) {
   if (state.daily.date !== today) {
     state.daily = {
       date: today,
-      progress: { hours: 0, earn: 0, call: 0 },
+      tasks: dailyTasksFor(today).map((task) => task.id),
+      progress: { hours: 0, earn: 0, call: 0, side: 0, main: 0, duty: 0 },
       done: {}
     };
     const kettle = state.purchases?.kettle || 0;
@@ -3393,7 +3421,6 @@ function doSideAction(id) {
   save();
   haptic('success');
   playSound('success');
-  toast(`${side.icon} ${side.title} начато · ${fmtSideDuration(durationMs)}`, 'info');
 }
 
 function finishSideAction() {
@@ -3436,6 +3463,7 @@ function finishSideAction() {
   state.stats.actionsTotal = (state.stats.actionsTotal || 0) + 1;
   state.stats.byAction = state.stats.byAction || {};
   state.stats.byAction[entry.id] = (state.stats.byAction[entry.id] || 0) + 1;
+  dailyAdd('side', 1);
 
   addXp(xpGain);
   renderActions();
@@ -3451,7 +3479,7 @@ function finishSideAction() {
   save();
   haptic('success');
   playSound('success');
-  toast(`${icon} ${title} выполнено · +${xpGain} XP`, 'good');
+  toast(`${icon} ${title} выполнено · ${gains.join(' · ')}`, 'good');
 }
 
 function doAction(id) {
@@ -4259,6 +4287,8 @@ function tick() {
     addXp(xpGain);
     dailyAdd('hours', Number(reward.hours) || 0);
     dailyAdd('earn', moneyGain);
+    dailyAdd('main', 1);
+    if (reward.duty) dailyAdd('duty', 1);
     if (state.busy.id === 'call') dailyAdd('call', 1);
     const gains = [`+${xpGain} XP`, `🕒 +${reward.hours || 0} игровых ч`];
     if (moneyGain > 0) gains.push(`+${fmt(moneyGain)} ₽`);
